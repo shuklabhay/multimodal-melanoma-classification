@@ -1,10 +1,7 @@
-from __future__ import annotations
-
 from modal import App, Image, Volume
 
 app = App(
     "lesion-classification",
-    tags={"environment": "apresearch26"},
     image=Image.debian_slim(python_version="3.11")
     .uv_sync()
     .add_local_dir("assets", "/assets", copy=False)
