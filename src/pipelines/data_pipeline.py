@@ -151,46 +151,8 @@ def download_isic2019() -> None:
     print("\nDownload complete!")
 
 
-def process_isic2019(
-    data_dir: Path, train_ratio: float = 0.9
-) -> dict[str, pl.DataFrame]:
-    """Main pipeline to process ISIC2019 training data with filtering and splitting.
-
-    Args:
-        data_dir: Path to the ISIC2019 training data directory (e.g., /data/raw/train/isic2019).
-        train_ratio: Ratio of data to use for training (default 0.9 for 90/10 split).
-
-    Returns:
-        Dictionary with 'train' and 'val' keys containing filtered DataFrames.
-    """
-    metadata_path = data_dir / "metadata.csv"
-
-    df = pl.read_csv(metadata_path)
-    print(f"Initial dataset size: {len(df)}")
-
-    df = filter_by_filename(df)
-    print(f"After filename filtering: {len(df)}")
-
-    df = filter_by_label(df)
-    print(f"After label filtering: {len(df)}")
-
-    df = filter_one_per_patient(df)
-    print(f"After per-patient filtering: {len(df)}")
-
-    df = df.sample(fraction=1.0, shuffle=True, seed=42)
-
-    split_idx = int(len(df) * train_ratio)
-    train_df = df[:split_idx]
-    val_df = df[split_idx:]
-
-    print(f"Train split: {len(train_df)}")
-    print(f"Val split: {len(val_df)}")
-
-    return {"train": train_df, "val": val_df}
-
-
-def verify_data() -> None:
-    """Verifies data integrity by checking image and metadata counts."""
+def verify_download() -> None:
+    """Verifies downloaded data integrity by checking image and metadata counts."""
     print("\nVerifying data...")
     base_dir = Path("/data/raw")
 
@@ -230,7 +192,7 @@ def verify_data() -> None:
                 print(
                     f"    ⚠ WARNING: {invalid_count} entries with unmapped labels (-1)"
                 )
-                print(f"      Sample diagnoses that failed mapping:")
+                print(f"      All diagnoses failing mapping:")
                 for diagnosis in (
                     invalid_labels.select("diagnosis_3").unique().to_series()
                 ):
@@ -249,6 +211,44 @@ def verify_data() -> None:
             print(f"      Expected: {expected}")
             print(f"      Images: {image_count}")
             print(f"      Metadata: {metadata_rows}")
+
+
+def process_isic2019(
+    data_dir: Path, train_ratio: float = 0.9
+) -> dict[str, pl.DataFrame]:
+    """Main pipeline to process ISIC2019 training data with filtering and splitting.
+
+    Args:
+        data_dir: Path to the ISIC2019 training data directory (e.g., /data/raw/train/isic2019).
+        train_ratio: Ratio of data to use for training (default 0.9 for 90/10 split).
+
+    Returns:
+        Dictionary with 'train' and 'val' keys containing filtered DataFrames.
+    """
+    metadata_path = data_dir / "metadata.csv"
+
+    df = pl.read_csv(metadata_path)
+    print(f"Initial dataset size: {len(df)}")
+
+    df = filter_by_filename(df)
+    print(f"After filename filtering: {len(df)}")
+
+    df = filter_by_label(df)
+    print(f"After label filtering: {len(df)}")
+
+    df = filter_one_per_patient(df)
+    print(f"After per-patient filtering: {len(df)}")
+
+    df = df.sample(fraction=1.0, shuffle=True, seed=42)
+
+    split_idx = int(len(df) * train_ratio)
+    train_df = df[:split_idx]
+    val_df = df[split_idx:]
+
+    print(f"Train split: {len(train_df)}")
+    print(f"Val split: {len(val_df)}")
+
+    return {"train": train_df, "val": val_df}
 
 
 def create_manifests(train_ratio: float = 0.9) -> None:
@@ -282,6 +282,50 @@ def create_manifests(train_ratio: float = 0.9) -> None:
     print("\nGenerating balance summaries...")
     _generate_balance_summaries(splits, buffer_dir)
     print(f"\nAll outputs saved to {buffer_dir}")
+
+
+def verify_manifests() -> None:
+    """Verifies created manifests for data quality and label validity."""
+    print("\nVerifying manifests...")
+    buffer_dir = Path("/data/buffer")
+
+    if not buffer_dir.exists():
+        print(
+            "  ⚠ Buffer directory not found. Run 'process' first to create manifests."
+        )
+        return
+
+    manifest_files = list(buffer_dir.glob("split_*.jsonl"))
+
+    if not manifest_files:
+        print("  ⚠ No manifest files found in buffer directory.")
+        return
+
+    for manifest_file in sorted(manifest_files):
+        split_name = manifest_file.stem.replace("split_", "")
+        print(f"\n  Verifying {split_name} manifest...")
+
+        entries = []
+        with jsonlines.open(manifest_file) as reader:
+            entries = list(reader)
+
+        print(f"    Total entries: {len(entries)}")
+
+        labels = [entry.get("label", -1) for entry in entries]
+        invalid_count = sum(1 for label in labels if label == -1)
+
+        if invalid_count > 0:
+            print(f"    ⚠ ERROR: {invalid_count} entries with invalid labels (-1)")
+        else:
+            print(f"    ✓ All labels valid (0-7)")
+
+        label_counts = {}
+        for label in labels:
+            label_counts[label] = label_counts.get(label, 0) + 1
+
+        print(f"    Label distribution:")
+        for label in sorted(label_counts.keys()):
+            print(f"      Label {label}: {label_counts[label]} entries")
 
 
 def df_to_manifest_dict(df: pl.DataFrame, images_dir: Path) -> list[dict]:

@@ -25,10 +25,37 @@ def download() -> None:
 
 
 @app.command()
-def verify() -> None:
-    """Verifies data integrity on Modal volume."""
+def verify_download() -> None:
+    """Verifies downloaded data integrity on Modal volume."""
     subprocess.run(
-        ["uv", "run", "modal", "run", "-m", "src.use_modal::data", "--step", "verify"],
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::data",
+            "--step",
+            "verify_download",
+        ],
+        check=True,
+    )
+
+
+@app.command()
+def verify_manifests() -> None:
+    """Verifies created manifests for data quality."""
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::data",
+            "--step",
+            "verify_manifests",
+        ],
         check=True,
     )
 
@@ -96,19 +123,22 @@ def main(ctx: Context) -> None:
     print("\n=== ISIC2019 Data Management ===")
     print("What would you like to do?")
     print("  1. Download data to Modal volume")
-    print("  2. Create train/val manifests")
-    print("  3. Verify data")
-    print("  4. Exit")
+    print("  2. Verify downloaded data")
+    print("  3. Create train/val manifests")
+    print("  4. Verify manifests")
+    print("  5. Exit")
 
-    choice = input("\nEnter your choice (1-4): ").strip()
+    choice = input("\nEnter your choice (1-5): ").strip()
 
     if choice == "1":
         download()
     elif choice == "2":
-        process()
+        verify_download()
     elif choice == "3":
-        verify()
+        process()
     elif choice == "4":
+        verify_manifests()
+    elif choice == "5":
         print("Exiting...")
     else:
         print("Invalid choice. Please run the script again.")

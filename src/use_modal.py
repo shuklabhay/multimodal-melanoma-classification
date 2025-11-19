@@ -4,7 +4,12 @@ from pathlib import Path
 import jsonlines
 from modal import App, Image, Volume
 
-from src.pipelines.data_pipeline import create_manifests, download_isic2019, verify_data
+from src.pipelines.data_pipeline import (
+    create_manifests,
+    download_isic2019,
+    verify_download,
+    verify_manifests,
+)
 
 app = App(
     "lesion-classification",
@@ -20,13 +25,16 @@ def data(step: str) -> None:
     """Collect and sort data inside a Modal volume using the ISIC CLI.
 
     Args:
-        step: workflow step to run ('all', 'download', or 'verify').
+        step: workflow step to run ('all', 'download', 'verify_download', 'verify_manifests').
     """
     if step in ["all", "download"]:
         download_isic2019()
 
-    if step in ["all", "verify"]:
-        verify_data()
+    if step in ["all", "verify_download"]:
+        verify_download()
+
+    if step in ["verify_manifests"]:
+        verify_manifests()
 
 
 @app.function(timeout=86400)
