@@ -8,7 +8,6 @@ from src.pipelines.data_pipeline import (
     create_manifests,
     download_isic2019,
     verify_download,
-    verify_manifests,
 )
 
 app = App(
@@ -25,16 +24,13 @@ def data(step: str) -> None:
     """Collect and sort data inside a Modal volume using the ISIC CLI.
 
     Args:
-        step: workflow step to run ('all', 'download', 'verify_download', 'verify_manifests').
+        step: workflow step to run ('all', 'download', 'verify_download').
     """
     if step in ["all", "download"]:
         download_isic2019()
 
     if step in ["all", "verify_download"]:
         verify_download()
-
-    if step in ["verify_manifests"]:
-        verify_manifests()
 
 
 @app.function(timeout=86400)

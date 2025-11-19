@@ -44,20 +44,10 @@ def verify_download() -> None:
 
 @app.command()
 def verify_manifests() -> None:
-    """Verifies created manifests for data quality."""
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "modal",
-            "run",
-            "-m",
-            "src.use_modal::data",
-            "--step",
-            "verify_manifests",
-        ],
-        check=True,
-    )
+    """Verifies created manifests for data quality (runs locally)."""
+    from src.pipelines.data_pipeline import verify_manifests as verify_fn
+
+    verify_fn()
 
 
 @app.command()
@@ -112,6 +102,22 @@ def process() -> None:
         buffer_dir.rmdir()
         print(f"\nManifests saved to {manifests_dir}")
         print(f"Balance summaries saved to {figures_dir}")
+
+    print("\nCleaning up Modal buffer...")
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "volume",
+            "rm",
+            "data",
+            "buffer",
+            "-r",
+        ],
+        check=True,
+    )
+    print("✓ Modal buffer cleared")
 
 
 @app.callback(invoke_without_command=True)

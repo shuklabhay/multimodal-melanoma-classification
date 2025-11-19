@@ -60,17 +60,20 @@ def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def filter_by_label(df: pl.DataFrame) -> pl.DataFrame:
-    """Drops entries with 'UNK' or 'UNKNOWN' diagnostic labels.
+    """Drops entries with diagnoses that cannot be mapped to valid labels (0-7).
 
     Args:
         df: DataFrame with 'diagnosis_3' column.
 
     Returns:
-        Filtered DataFrame with unknown labels removed.
+        Filtered DataFrame with unmappable diagnoses removed.
     """
-    return df.filter(
-        ~pl.col("diagnosis_3").str.to_uppercase().is_in(["UNK", "UNKNOWN"])
+    df_with_labels = df.with_columns(
+        pl.col("diagnosis_3")
+        .map_elements(get_label_from_diagnosis, return_dtype=pl.Int64)
+        .alias("_temp_label")
     )
+    return df_with_labels.filter(pl.col("_temp_label") != -1).drop("_temp_label")
 
 
 def filter_one_per_patient(df: pl.DataFrame) -> pl.DataFrame:
@@ -266,41 +269,51 @@ def create_manifests(train_ratio: float = 0.9) -> None:
     buffer_dir = Path("/data/buffer")
     buffer_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest_data = {}
+    splits_with_labels = {}
     for split, df in splits.items():
+        df_with_labels = df.with_columns(
+            pl.col("diagnosis_3")
+            .map_elements(get_label_from_diagnosis, return_dtype=pl.Int64)
+            .alias("label")
+        )
+        splits_with_labels[split] = df_with_labels
+
+    for split, df in splits_with_labels.items():
         manifest_path = buffer_dir / f"split_{split}.jsonl"
         print(f"Writing {split} manifest to {manifest_path}...")
 
         manifest_list = df_to_manifest_dict(df, images_dir)
+        random.seed(40)
+        random.shuffle(manifest_list)
 
         with jsonlines.open(manifest_path, mode="w") as writer:
             writer.write_all(manifest_list)
 
         print(f"Saved {len(manifest_list)} entries to {manifest_path}")
-        manifest_data[split] = manifest_list
 
     print("\nGenerating balance summaries...")
-    _generate_balance_summaries(splits, buffer_dir)
+    _generate_balance_summaries(splits_with_labels, buffer_dir)
     print(f"\nAll outputs saved to {buffer_dir}")
 
 
 def verify_manifests() -> None:
     """Verifies created manifests for data quality and label validity."""
     print("\nVerifying manifests...")
-    buffer_dir = Path("/data/buffer")
+    manifests_dir = Path("assets/manifests")
 
-    if not buffer_dir.exists():
+    if not manifests_dir.exists():
         print(
-            "  ⚠ Buffer directory not found. Run 'process' first to create manifests."
+            "  ⚠ Manifests directory not found. Run 'process' first to create manifests."
         )
         return
 
-    manifest_files = list(buffer_dir.glob("split_*.jsonl"))
+    manifest_files = list(manifests_dir.glob("split_*.jsonl"))
 
     if not manifest_files:
-        print("  ⚠ No manifest files found in buffer directory.")
+        print("  ⚠ No manifest files found in manifests directory.")
         return
 
+    all_manifests = {}
     for manifest_file in sorted(manifest_files):
         split_name = manifest_file.stem.replace("split_", "")
         print(f"\n  Verifying {split_name} manifest...")
@@ -319,20 +332,42 @@ def verify_manifests() -> None:
         else:
             print(f"    ✓ All labels valid (0-7)")
 
-        label_counts = {}
-        for label in labels:
-            label_counts[label] = label_counts.get(label, 0) + 1
+        patient_ids = [
+            entry.get("patient_id") for entry in entries if entry.get("patient_id")
+        ]
+        unique_patients = len(set(patient_ids))
 
-        print(f"    Label distribution:")
-        for label in sorted(label_counts.keys()):
-            print(f"      Label {label}: {label_counts[label]} entries")
+        if unique_patients == len(patient_ids):
+            print(f"    ✓ All patient IDs unique ({unique_patients} patients)")
+        else:
+            duplicate_count = len(patient_ids) - unique_patients
+            print(f"    ⚠ WARNING: {duplicate_count} duplicate patient IDs found")
+
+        all_manifests[split_name] = entries
+
+    if "train" in all_manifests and "val" in all_manifests:
+        print(f"\n  Checking for patient overlap between splits...")
+        train_patients = set(
+            e.get("patient_id") for e in all_manifests["train"] if e.get("patient_id")
+        )
+        val_patients = set(
+            e.get("patient_id") for e in all_manifests["val"] if e.get("patient_id")
+        )
+
+        overlap = train_patients & val_patients
+        if overlap:
+            print(
+                f"    ⚠ ERROR: {len(overlap)} patients appear in both train and val splits"
+            )
+        else:
+            print(f"    ✓ No patient overlap between splits")
 
 
 def df_to_manifest_dict(df: pl.DataFrame, images_dir: Path) -> list[dict]:
     """Converts Polars DataFrame to list of manifest dictionaries.
 
     Args:
-        df: DataFrame with ISIC2019 metadata.
+        df: DataFrame with ISIC2019 metadata (already filtered, with label column).
         images_dir: Path to images directory for constructing full paths.
 
     Returns:
@@ -343,16 +378,9 @@ def df_to_manifest_dict(df: pl.DataFrame, images_dir: Path) -> list[dict]:
     for row in tqdm(
         df.iter_rows(named=True), total=len(df), desc="Generating manifests"
     ):
-        isic_id = row.get("isic_id", "")
-        diagnosis = row.get("diagnosis_3", "")
-        label = get_label_from_diagnosis(diagnosis)
-
-        if label == -1:
-            continue
-
         manifest_entry = {
-            "image_path": str(images_dir / f"{isic_id}.jpg"),
-            "label": label,
+            "image_path": str(images_dir / f"{row.get('isic_id', '')}.jpg"),
+            "label": row.get("label"),
             "patient_id": row.get("patient_id", ""),
             "age_approx": row.get("age_approx"),
             "sex": row.get("sex", "").lower() if row.get("sex") else None,
@@ -370,7 +398,7 @@ def _generate_balance_summaries(
     """Generates and saves balance summary visualizations.
 
     Args:
-        splits: Dictionary with 'train' and 'val' DataFrames.
+        splits: Dictionary with 'train' and 'val' DataFrames (already filtered, with labels).
         output_dir: Directory to save summary images.
     """
     label_names = {
@@ -384,152 +412,219 @@ def _generate_balance_summaries(
         7: "Squamous cell carcinoma",
     }
 
-    for split_name, df in splits.items():
-        df_with_labels = df.with_columns(
-            pl.col("diagnosis_3")
-            .map_elements(get_label_from_diagnosis, return_dtype=pl.Int64)
-            .alias("label")
-        )
-
-        _plot_label_distribution(df_with_labels, label_names, split_name, output_dir)
-        _plot_site_distribution(df_with_labels, label_names, split_name, output_dir)
-        _plot_gender_distribution(df_with_labels, label_names, split_name, output_dir)
+    _plot_label_distribution_combined(splits, label_names, output_dir)
+    _plot_site_distribution_combined(splits, label_names, output_dir)
+    _plot_gender_distribution_combined(splits, label_names, output_dir)
+    _plot_age_distribution_combined(splits, label_names, output_dir)
 
 
-def _plot_label_distribution(
-    df: pl.DataFrame, label_names: dict, split_name: str, output_dir: Path
+def _plot_label_distribution_combined(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots class-wise label distribution."""
-    label_counts = df.group_by("label").agg(pl.len().alias("count")).sort("label")
+    """Plots train vs val label distribution side-by-side."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    labels = [
-        label_names.get(row["label"], f"Label {row['label']}")
-        for row in label_counts.iter_rows(named=True)
-    ]
-    counts = [row["count"] for row in label_counts.iter_rows(named=True)]
+    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+        label_counts = df.group_by("label").agg(pl.len().alias("count")).sort("label")
+        labels = [
+            label_names.get(row["label"], f"Label {row['label']}")
+            for row in label_counts.iter_rows(named=True)
+        ]
+        counts = [row["count"] for row in label_counts.iter_rows(named=True)]
 
-    ax.bar(range(len(labels)), counts)
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=45, ha="right")
-    ax.set_xlabel("Class")
-    ax.set_ylabel("Count")
-    ax.set_title(f"Label Distribution - {split_name.capitalize()} Split")
+        ax.bar(
+            range(len(labels)),
+            counts,
+            color="steelblue" if split_name == "train" else "coral",
+        )
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_xlabel("Class")
+        ax.set_ylabel("Count")
+        ax.set_title(f"{split_name.capitalize()} Split (n={len(df)})")
+        ax.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Label Distribution", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(output_dir / f"balance_label_{split_name}.png", dpi=150)
+    plt.savefig(output_dir / "balance_label.png", dpi=150)
     plt.close()
 
 
-def _plot_site_distribution(
-    df: pl.DataFrame, label_names: dict, split_name: str, output_dir: Path
+def _plot_site_distribution_combined(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots anatomical site distribution by class and split."""
-    site_label_counts = (
-        df.group_by(["anatom_site_general", "label"])
-        .agg(pl.len().alias("count"))
-        .sort(["anatom_site_general", "label"])
-    )
+    """Plots train vs val site distribution side-by-side."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
 
-    sites = (
-        site_label_counts.select("anatom_site_general").unique().to_series().to_list()
-    )
-    label_ids = sorted(df.select("label").unique().to_series().to_list())
+    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+        site_label_counts = (
+            df.group_by(["anatom_site_general", "label"])
+            .agg(pl.len().alias("count"))
+            .sort(["anatom_site_general", "label"])
+        )
 
-    data_matrix = []
-    for site in sites:
-        row = []
+        sites = (
+            site_label_counts.select("anatom_site_general")
+            .unique()
+            .to_series()
+            .to_list()
+        )
+        label_ids = sorted(df.select("label").unique().to_series().to_list())
+
+        data_matrix = []
+        for site in sites:
+            row = []
+            for label_id in label_ids:
+                if site is None:
+                    count = (
+                        site_label_counts.filter(
+                            pl.col("anatom_site_general").is_null()
+                            & (pl.col("label") == label_id)
+                        )
+                        .select("count")
+                        .to_series()
+                    )
+                else:
+                    count = (
+                        site_label_counts.filter(
+                            (pl.col("anatom_site_general") == site)
+                            & (pl.col("label") == label_id)
+                        )
+                        .select("count")
+                        .to_series()
+                    )
+                row.append(count[0] if len(count) > 0 else 0)
+            data_matrix.append(row)
+
+        im = ax.imshow(data_matrix, aspect="auto", cmap="YlOrRd")
+        ax.set_xticks(range(len(label_ids)))
+        ax.set_xticklabels(
+            [label_names.get(lid, f"L{lid}") for lid in label_ids],
+            rotation=45,
+            ha="right",
+        )
+        ax.set_yticks(range(len(sites)))
+        ax.set_yticklabels([s if s else "Unknown" for s in sites])
+        ax.set_xlabel("Class")
+        ax.set_ylabel("Anatomical Site")
+        ax.set_title(f"{split_name.capitalize()} Split")
+        plt.colorbar(im, ax=ax, label="Count")
+
+    fig.suptitle("Site Distribution by Class", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(output_dir / "balance_site.png", dpi=150)
+    plt.close()
+
+
+def _plot_gender_distribution_combined(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
+) -> None:
+    """Plots train vs val gender distribution side-by-side."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
+
+    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+        gender_label_counts = (
+            df.group_by(["sex", "label"])
+            .agg(pl.len().alias("count"))
+            .sort(["sex", "label"])
+        )
+
+        label_ids = sorted(df.select("label").unique().to_series().to_list())
+
+        male_counts = []
+        female_counts = []
+
         for label_id in label_ids:
-            if site is None:
-                count = (
-                    site_label_counts.filter(
-                        pl.col("anatom_site_general").is_null()
-                        & (pl.col("label") == label_id)
-                    )
-                    .select("count")
-                    .to_series()
+            male_count = (
+                gender_label_counts.filter(
+                    (pl.col("sex") == "male") & (pl.col("label") == label_id)
                 )
-            else:
-                count = (
-                    site_label_counts.filter(
-                        (pl.col("anatom_site_general") == site)
-                        & (pl.col("label") == label_id)
-                    )
-                    .select("count")
-                    .to_series()
+                .select("count")
+                .to_series()
+            )
+            male_counts.append(male_count[0] if len(male_count) > 0 else 0)
+
+            female_count = (
+                gender_label_counts.filter(
+                    (pl.col("sex") == "female") & (pl.col("label") == label_id)
                 )
-            row.append(count[0] if len(count) > 0 else 0)
-        data_matrix.append(row)
+                .select("count")
+                .to_series()
+            )
+            female_counts.append(female_count[0] if len(female_count) > 0 else 0)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    im = ax.imshow(data_matrix, aspect="auto", cmap="YlOrRd")
+        x = range(len(label_ids))
+        width = 0.35
 
-    ax.set_xticks(range(len(label_ids)))
-    ax.set_xticklabels(
-        [label_names.get(lid, f"L{lid}") for lid in label_ids], rotation=45, ha="right"
-    )
-    ax.set_yticks(range(len(sites)))
-    ax.set_yticklabels([s if s else "Unknown" for s in sites])
-    ax.set_xlabel("Class")
-    ax.set_ylabel("Anatomical Site")
-    ax.set_title(f"Site Distribution by Class - {split_name.capitalize()} Split")
+        ax.bar(
+            [i - width / 2 for i in x],
+            male_counts,
+            width,
+            label="Male",
+            color="steelblue",
+        )
+        ax.bar(
+            [i + width / 2 for i in x],
+            female_counts,
+            width,
+            label="Female",
+            color="coral",
+        )
 
-    plt.colorbar(im, ax=ax, label="Count")
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            [label_names.get(lid, f"L{lid}") for lid in label_ids],
+            rotation=45,
+            ha="right",
+        )
+        ax.set_xlabel("Class")
+        ax.set_ylabel("Count")
+        ax.set_title(f"{split_name.capitalize()} Split")
+        ax.legend()
+        ax.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Gender Distribution by Class", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(output_dir / f"balance_site_{split_name}.png", dpi=150)
+    plt.savefig(output_dir / "balance_gender.png", dpi=150)
     plt.close()
 
 
-def _plot_gender_distribution(
-    df: pl.DataFrame, label_names: dict, split_name: str, output_dir: Path
+def _plot_age_distribution_combined(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots gender distribution by class and split."""
-    gender_label_counts = (
-        df.group_by(["sex", "label"])
-        .agg(pl.len().alias("count"))
-        .sort(["sex", "label"])
-    )
+    """Plots train vs val age distribution side-by-side."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
 
-    label_ids = sorted(df.select("label").unique().to_series().to_list())
-    genders = ["male", "female"]
+    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+        label_ids = sorted(df.select("label").unique().to_series().to_list())
 
-    male_counts = []
-    female_counts = []
-
-    for label_id in label_ids:
-        male_count = (
-            gender_label_counts.filter(
-                (pl.col("sex") == "male") & (pl.col("label") == label_id)
+        for label_id in label_ids:
+            label_data = (
+                df.filter(pl.col("label") == label_id).select("age_approx").to_series()
             )
-            .select("count")
-            .to_series()
+            label_data = label_data.filter(label_data.is_not_null())
+
+            if len(label_data) > 0:
+                ax.violinplot(
+                    [label_data.to_list()],
+                    positions=[label_id],
+                    widths=0.7,
+                    showmeans=True,
+                    showmedians=True,
+                )
+
+        ax.set_xticks(label_ids)
+        ax.set_xticklabels(
+            [label_names.get(lid, f"L{lid}") for lid in label_ids],
+            rotation=45,
+            ha="right",
         )
-        male_counts.append(male_count[0] if len(male_count) > 0 else 0)
+        ax.set_xlabel("Class")
+        ax.set_ylabel("Age (years)")
+        ax.set_title(f"{split_name.capitalize()} Split")
+        ax.grid(axis="y", alpha=0.3)
 
-        female_count = (
-            gender_label_counts.filter(
-                (pl.col("sex") == "female") & (pl.col("label") == label_id)
-            )
-            .select("count")
-            .to_series()
-        )
-        female_counts.append(female_count[0] if len(female_count) > 0 else 0)
-
-    x = range(len(label_ids))
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.bar([i - width / 2 for i in x], male_counts, width, label="Male")
-    ax.bar([i + width / 2 for i in x], female_counts, width, label="Female")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        [label_names.get(lid, f"L{lid}") for lid in label_ids], rotation=45, ha="right"
-    )
-    ax.set_xlabel("Class")
-    ax.set_ylabel("Count")
-    ax.set_title(f"Gender Distribution by Class - {split_name.capitalize()} Split")
-    ax.legend()
-
+    fig.suptitle("Age Distribution by Class", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(output_dir / f"balance_gender_{split_name}.png", dpi=150)
+    plt.savefig(output_dir / "balance_age.png", dpi=150)
     plt.close()
