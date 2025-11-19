@@ -412,13 +412,13 @@ def _generate_balance_summaries(
         7: "Squamous cell carcinoma",
     }
 
-    _plot_label_distribution_combined(splits, label_names, output_dir)
-    _plot_site_distribution_combined(splits, label_names, output_dir)
-    _plot_gender_distribution_combined(splits, label_names, output_dir)
-    _plot_age_distribution_combined(splits, label_names, output_dir)
+    _plot_label_distribution(splits, label_names, output_dir)
+    _plot_site_distribution(splits, label_names, output_dir)
+    _plot_gender_distribution(splits, label_names, output_dir)
+    _plot_age_distribution(splits, label_names, output_dir)
 
 
-def _plot_label_distribution_combined(
+def _plot_label_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
     """Plots train vs val label distribution side-by-side."""
@@ -450,7 +450,7 @@ def _plot_label_distribution_combined(
     plt.close()
 
 
-def _plot_site_distribution_combined(
+def _plot_site_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
     """Plots train vs val site distribution side-by-side."""
@@ -516,7 +516,7 @@ def _plot_site_distribution_combined(
     plt.close()
 
 
-def _plot_gender_distribution_combined(
+def _plot_gender_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
     """Plots train vs val gender distribution side-by-side."""
@@ -589,7 +589,7 @@ def _plot_gender_distribution_combined(
     plt.close()
 
 
-def _plot_age_distribution_combined(
+def _plot_age_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
     """Plots train vs val age distribution side-by-side."""
@@ -598,7 +598,7 @@ def _plot_age_distribution_combined(
     for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
         label_ids = sorted(df.select("label").unique().to_series().to_list())
 
-        for label_id in label_ids:
+        for i, label_id in enumerate(label_ids):
             label_data = (
                 df.filter(pl.col("label") == label_id).select("age_approx").to_series()
             )
@@ -607,13 +607,13 @@ def _plot_age_distribution_combined(
             if len(label_data) > 0:
                 ax.violinplot(
                     [label_data.to_list()],
-                    positions=[label_id],
+                    positions=[i],
                     widths=0.7,
                     showmeans=True,
                     showmedians=True,
                 )
 
-        ax.set_xticks(label_ids)
+        ax.set_xticks(range(len(label_ids)))
         ax.set_xticklabels(
             [label_names.get(lid, f"L{lid}") for lid in label_ids],
             rotation=45,
