@@ -216,7 +216,7 @@ def verify_download() -> None:
             print(f"      Metadata: {metadata_rows}")
 
 
-def process_isic2019(
+def create_train_val_splits(
     data_dir: Path, train_ratio: float = 0.9
 ) -> dict[str, pl.DataFrame]:
     """Main pipeline to process ISIC2019 training data with filtering and splitting.
@@ -254,16 +254,45 @@ def process_isic2019(
     return {"train": train_df, "val": val_df}
 
 
+def create_test_split(data_dir: Path) -> dict[str, pl.DataFrame]:
+    """Processes ISIC2019 test data.
+
+    Args:
+        data_dir: Path to the ISIC2019 test data directory.
+
+    Returns:
+        Dictionary with 'test' key containing filtered DataFrame.
+    """
+    metadata_path = data_dir / "metadata.csv"
+
+    df = pl.read_csv(metadata_path)
+    print(f"Initial test dataset size: {len(df)}")
+
+    df = filter_by_filename(df)
+    print(f"After filename filtering: {len(df)}")
+
+    df = filter_by_label(df)
+    print(f"After label filtering: {len(df)}")
+    print(f"Final test split: {len(df)}")
+
+    return {"test": df}
+
+
 def create_manifests(train_ratio: float = 0.9) -> None:
-    """Creates train/val manifests and generates balance summaries.
+    """Creates split manifests and generates balance summaries.
 
     Args:
         train_ratio: Ratio of data to use for training (default 0.9).
     """
     print("Starting data processing pipeline...")
-    data_dir = Path("/data/raw/train/isic2019")
-    images_dir = data_dir / "images"
-    splits = process_isic2019(data_dir, train_ratio=train_ratio)
+    train_data_dir = Path("/data/raw/train/isic2019")
+    test_data_dir = Path("/data/raw/test/isic2019")
+    images_dir_train = train_data_dir / "images"
+    images_dir_test = test_data_dir / "images"
+
+    train_val_splits = create_train_val_splits(train_data_dir, train_ratio=train_ratio)
+    test_split = create_test_split(test_data_dir)
+    splits = {**train_val_splits, **test_split}
 
     print("\nConverting to manifests...")
     buffer_dir = Path("/data/buffer")
@@ -282,7 +311,8 @@ def create_manifests(train_ratio: float = 0.9) -> None:
         manifest_path = buffer_dir / f"split_{split}.jsonl"
         print(f"Writing {split} manifest to {manifest_path}...")
 
-        manifest_list = df_to_manifest_dict(df, images_dir)
+        current_images_dir = images_dir_test if split == "test" else images_dir_train
+        manifest_list = df_to_manifest_dict(df, current_images_dir)
         random.seed(40)
         random.shuffle(manifest_list)
 
@@ -421,10 +451,11 @@ def _generate_balance_summaries(
 def _plot_label_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots train vs val label distribution side-by-side."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    """Plots train vs val vs test label distribution side-by-side."""
+    """Plots train vs val vs test label distribution side-by-side."""
+    fig, axes = plt.subplots(1, 3, figsize=(24, 6))
 
-    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+    for ax, (split_name, df) in zip(axes, splits.items()):
         label_counts = df.group_by("label").agg(pl.len().alias("count")).sort("label")
         labels = [
             label_names.get(row["label"], f"Label {row['label']}")
@@ -453,10 +484,10 @@ def _plot_label_distribution(
 def _plot_site_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots train vs val site distribution side-by-side."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    """Plots train vs val vs test site distribution side-by-side."""
+    fig, axes = plt.subplots(1, 3, figsize=(30, 8))
 
-    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+    for ax, (split_name, df) in zip(axes, splits.items()):
         site_label_counts = (
             df.group_by(["anatom_site_general", "label"])
             .agg(pl.len().alias("count"))
@@ -519,10 +550,10 @@ def _plot_site_distribution(
 def _plot_gender_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots train vs val gender distribution side-by-side."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
+    """Plots train vs val vs test gender distribution side-by-side."""
+    fig, axes = plt.subplots(1, 3, figsize=(30, 6))
 
-    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+    for ax, (split_name, df) in zip(axes, splits.items()):
         gender_label_counts = (
             df.group_by(["sex", "label"])
             .agg(pl.len().alias("count"))
@@ -592,10 +623,10 @@ def _plot_gender_distribution(
 def _plot_age_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
 ) -> None:
-    """Plots train vs val age distribution side-by-side."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
+    """Plots train vs val vs test age distribution side-by-side."""
+    fig, axes = plt.subplots(1, 3, figsize=(30, 6))
 
-    for ax, (split_name, df) in zip([ax1, ax2], splits.items()):
+    for ax, (split_name, df) in zip(axes, splits.items()):
         label_ids = sorted(df.select("label").unique().to_series().to_list())
 
         for i, label_id in enumerate(label_ids):

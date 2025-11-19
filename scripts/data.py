@@ -64,7 +64,7 @@ def run_all() -> None:
 
 @app.command()
 def process() -> None:
-    """Processes ISIC2019 data and creates train/val split manifests locally."""
+    """Processes ISIC2019 data and creates split manifests locally."""
     subprocess.run(
         ["uv", "run", "modal", "run", "-m", "src.use_modal::process"],
         check=True,
@@ -133,7 +133,7 @@ def main(ctx: Context) -> None:
     print("What would you like to do?")
     print("  1. Download data to Modal volume")
     print("  2. Verify downloaded data")
-    print("  3. Create train/val manifests")
+    print("  3. Create split manifests")
     print("  4. Verify manifests")
     print("  5. Exit")
 
