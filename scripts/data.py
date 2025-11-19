@@ -1,7 +1,10 @@
 import subprocess
+import sys
 from pathlib import Path
 
 from typer import Context, Typer
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 app = Typer()
 
