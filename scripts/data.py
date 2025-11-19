@@ -50,9 +50,7 @@ def process() -> None:
         check=True,
     )
 
-    print("\nDownloading manifests from Modal Volume...")
-    manifests_dir = Path("assets/manifests")
-    manifests_dir.mkdir(parents=True, exist_ok=True)
+    print("\nDownloading outputs from Modal Volume...")
 
     subprocess.run(
         [
@@ -63,13 +61,30 @@ def process() -> None:
             "get",
             "--force",
             "data",
-            "manifests",
-            "assets",
+            "buffer",
+            ".",
         ],
         check=True,
     )
 
-    print(f"Manifests saved to {manifests_dir}")
+    buffer_dir = Path("buffer")
+    if buffer_dir.exists():
+        manifests_dir = Path("assets/manifests")
+        figures_dir = Path("assets/figures")
+        manifests_dir.mkdir(parents=True, exist_ok=True)
+        figures_dir.mkdir(parents=True, exist_ok=True)
+
+        for file in buffer_dir.iterdir():
+            if file.suffix == ".jsonl":
+                file.rename(manifests_dir / file.name)
+                print(f"  Moved {file.name} to {manifests_dir}")
+            elif file.suffix == ".png":
+                file.rename(figures_dir / file.name)
+                print(f"  Moved {file.name} to {figures_dir}")
+
+        buffer_dir.rmdir()
+        print(f"\nManifests saved to {manifests_dir}")
+        print(f"Balance summaries saved to {figures_dir}")
 
 
 @app.callback(invoke_without_command=True)

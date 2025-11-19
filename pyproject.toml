@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "isic-cli>=12.4.0",
     "jsonlines>=4.0.0",
+    "matplotlib>=3.10.7",
     "modal>=1.2.2",
     "numpy>=2.2.6",
     "pillow>=12.0.0",

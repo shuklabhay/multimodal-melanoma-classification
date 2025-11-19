@@ -62,7 +62,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0067719.jpg", "label": 0, "patient_id": null, "age_approx": 80, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033491.jpg", "label": 4, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072910.jpg", "label": 4, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "head/neck"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014726.jpg", "label": 1, "patient_id": "IP_6424174", "age_approx": 20, "sex": "female", "anatom_site_general": "head/neck"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014727.jpg", "label": 0, "patient_id": "IP_8355925", "age_approx": 65, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0026771.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0057639.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058837.jpg", "label": 0, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "head/neck"}
@@ -326,7 +326,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0032569.jpg", "label": 0, "patient_id": null, "age_approx": 30, "sex": "male", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033927.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0032594.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "female", "anatom_site_general": "upper extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014687.jpg", "label": 1, "patient_id": "IP_7844475", "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014685.jpg", "label": 1, "patient_id": "IP_9025345", "age_approx": 25, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072535.jpg", "label": 0, "patient_id": null, "age_approx": 50, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0012773.jpg", "label": 4, "patient_id": null, "age_approx": 85, "sex": "male", "anatom_site_general": "lateral torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0000020.jpg", "label": 1, "patient_id": null, "age_approx": 25, "sex": "female", "anatom_site_general": "anterior torso"}
@@ -429,7 +429,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0029506.jpg", "label": 1, "patient_id": null, "age_approx": 60, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0053535.jpg", "label": 2, "patient_id": null, "age_approx": 80, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0055976.jpg", "label": 0, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": "head/neck"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014688.jpg", "label": 0, "patient_id": "IP_6366957", "age_approx": 70, "sex": "male", "anatom_site_general": "anterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014687.jpg", "label": 1, "patient_id": "IP_7844475", "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0028344.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0056811.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0013270.jpg", "label": 4, "patient_id": null, "age_approx": 85, "sex": "male", "anatom_site_general": "anterior torso"}
@@ -668,7 +668,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0031490.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0000523.jpg", "label": 1, "patient_id": null, "age_approx": null, "sex": null, "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0013080.jpg", "label": 1, "patient_id": null, "age_approx": 80, "sex": "male", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015079.jpg", "label": 0, "patient_id": "IP_3458128", "age_approx": null, "sex": null, "anatom_site_general": "posterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015064.jpg", "label": 1, "patient_id": "IP_1044571", "age_approx": 50, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0068357.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058678.jpg", "label": 2, "patient_id": null, "age_approx": 85, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0064275.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "anterior torso"}
@@ -984,7 +984,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0025902.jpg", "label": 1, "patient_id": null, "age_approx": 80, "sex": "male", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0065765.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0069836.jpg", "label": 2, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015411.jpg", "label": 1, "patient_id": "IP_2910667", "age_approx": 15, "sex": "female", "anatom_site_general": "lower extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015404.jpg", "label": 1, "patient_id": "IP_4093309", "age_approx": null, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0000282.jpg", "label": 0, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0028697.jpg", "label": 1, "patient_id": null, "age_approx": 80, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0055890.jpg", "label": 2, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": "upper extremity"}
@@ -1124,7 +1124,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0053551.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0069842.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0057762.jpg", "label": 0, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": "anterior torso"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015481.jpg", "label": 1, "patient_id": "IP_6481024", "age_approx": 60, "sex": "male", "anatom_site_general": "anterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015468.jpg", "label": 1, "patient_id": "IP_3798402", "age_approx": 40, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0068723.jpg", "label": 2, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0071693.jpg", "label": 0, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062742.jpg", "label": 3, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "head/neck"}
@@ -1178,7 +1178,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0030287.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0031941.jpg", "label": 0, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0070614.jpg", "label": 0, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014722.jpg", "label": 0, "patient_id": "IP_0630443", "age_approx": 40, "sex": "female", "anatom_site_general": "posterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014723.jpg", "label": 4, "patient_id": "IP_3708427", "age_approx": 40, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0065859.jpg", "label": 4, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0024694.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0070096.jpg", "label": 2, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": "head/neck"}
@@ -1201,7 +1201,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0029607.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0056072.jpg", "label": 0, "patient_id": null, "age_approx": 80, "sex": "male", "anatom_site_general": "palms/soles"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033291.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "male", "anatom_site_general": null}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014762.jpg", "label": 1, "patient_id": "IP_8895273", "age_approx": 30, "sex": "male", "anatom_site_general": "lateral torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014768.jpg", "label": 1, "patient_id": "IP_9660222", "age_approx": 15, "sex": "male", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0026581.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062299.jpg", "label": 2, "patient_id": null, "age_approx": 75, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033076.jpg", "label": 1, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": "upper extremity"}
@@ -1267,7 +1267,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060822.jpg", "label": 1, "patient_id": null, "age_approx": 40, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033604.jpg", "label": 1, "patient_id": null, "age_approx": 20, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072106.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014724.jpg", "label": 1, "patient_id": "IP_1483425", "age_approx": 70, "sex": "male", "anatom_site_general": "posterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014725.jpg", "label": 1, "patient_id": "IP_9740614", "age_approx": 25, "sex": "female", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0024325.jpg", "label": 1, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0055556.jpg", "label": 0, "patient_id": null, "age_approx": 75, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0024406.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "male", "anatom_site_general": "lower extremity"}
@@ -1475,7 +1475,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0054905.jpg", "label": 2, "patient_id": null, "age_approx": 75, "sex": "male", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072123.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0061186.jpg", "label": 2, "patient_id": null, "age_approx": 70, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015353.jpg", "label": 1, "patient_id": "IP_8966845", "age_approx": null, "sex": "female", "anatom_site_general": "lateral torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015347.jpg", "label": 1, "patient_id": "IP_3628888", "age_approx": 35, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060736.jpg", "label": 0, "patient_id": null, "age_approx": 70, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060264.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0033026.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "posterior torso"}
@@ -1492,7 +1492,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0031857.jpg", "label": 1, "patient_id": null, "age_approx": 25, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0054181.jpg", "label": 3, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0025179.jpg", "label": 1, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014735.jpg", "label": 0, "patient_id": "IP_1704132", "age_approx": 35, "sex": "female", "anatom_site_general": "lower extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014739.jpg", "label": 1, "patient_id": "IP_4352021", "age_approx": null, "sex": null, "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0011330.jpg", "label": 1, "patient_id": null, "age_approx": 25, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072994.jpg", "label": 2, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0063168.jpg", "label": 0, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
@@ -1500,7 +1500,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0066396.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0056168.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0071153.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014851.jpg", "label": 1, "patient_id": "IP_6638720", "age_approx": null, "sex": "male", "anatom_site_general": "lower extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014848.jpg", "label": 1, "patient_id": "IP_3043095", "age_approx": null, "sex": null, "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0059289.jpg", "label": 1, "patient_id": null, "age_approx": 60, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0055776.jpg", "label": 0, "patient_id": null, "age_approx": 70, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058978.jpg", "label": 2, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": "upper extremity"}
@@ -1618,7 +1618,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0064353.jpg", "label": 2, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0057068.jpg", "label": 4, "patient_id": null, "age_approx": 80, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0069341.jpg", "label": 4, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": "head/neck"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014857.jpg", "label": 0, "patient_id": "IP_7322885", "age_approx": 70, "sex": "male", "anatom_site_general": "posterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014854.jpg", "label": 1, "patient_id": "IP_3518981", "age_approx": 35, "sex": "female", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0012383.jpg", "label": 4, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072650.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0059116.jpg", "label": 2, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "head/neck"}
@@ -1663,7 +1663,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0032818.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0061282.jpg", "label": 2, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0025868.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015132.jpg", "label": 0, "patient_id": "IP_0834679", "age_approx": 75, "sex": "male", "anatom_site_general": "posterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015130.jpg", "label": 1, "patient_id": "IP_7029073", "age_approx": null, "sex": null, "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0068995.jpg", "label": 3, "patient_id": null, "age_approx": 70, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0000006.jpg", "label": 1, "patient_id": null, "age_approx": 25, "sex": "female", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0066190.jpg", "label": 2, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": "anterior torso"}
@@ -1856,7 +1856,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062408.jpg", "label": 3, "patient_id": null, "age_approx": 80, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0027227.jpg", "label": 1, "patient_id": null, "age_approx": 40, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0070852.jpg", "label": 0, "patient_id": null, "age_approx": 40, "sex": "male", "anatom_site_general": "anterior torso"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014693.jpg", "label": 1, "patient_id": "IP_2073976", "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014692.jpg", "label": 1, "patient_id": "IP_5809990", "age_approx": 40, "sex": "male", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0064718.jpg", "label": 1, "patient_id": null, "age_approx": 30, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0029384.jpg", "label": 4, "patient_id": null, "age_approx": 40, "sex": "male", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0031458.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "upper extremity"}
@@ -1919,7 +1919,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0013226.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062605.jpg", "label": 1, "patient_id": null, "age_approx": 25, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0072626.jpg", "label": 0, "patient_id": null, "age_approx": 70, "sex": "female", "anatom_site_general": "anterior torso"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015355.jpg", "label": 1, "patient_id": "IP_1303547", "age_approx": 30, "sex": "female", "anatom_site_general": "lower extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015353.jpg", "label": 1, "patient_id": "IP_8966845", "age_approx": null, "sex": "female", "anatom_site_general": "lateral torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058072.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "female", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0068329.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0073187.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "female", "anatom_site_general": "upper extremity"}
@@ -1939,7 +1939,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0000275.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0025064.jpg", "label": 4, "patient_id": null, "age_approx": 35, "sex": "female", "anatom_site_general": "lower extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0030947.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015224.jpg", "label": 1, "patient_id": "IP_4239784", "age_approx": 50, "sex": "male", "anatom_site_general": "lateral torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015232.jpg", "label": 1, "patient_id": "IP_7467442", "age_approx": 40, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058391.jpg", "label": 0, "patient_id": null, "age_approx": 70, "sex": "male", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0032443.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0031560.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": "upper extremity"}
@@ -1964,7 +1964,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0009911.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": "upper extremity"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0026117.jpg", "label": 2, "patient_id": null, "age_approx": 75, "sex": "female", "anatom_site_general": "head/neck"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0057033.jpg", "label": 0, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "upper extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015273.jpg", "label": 1, "patient_id": "IP_2751563", "age_approx": 35, "sex": "male", "anatom_site_general": "lateral torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015274.jpg", "label": 1, "patient_id": "IP_5886200", "age_approx": 40, "sex": "female", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0064506.jpg", "label": 2, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0030658.jpg", "label": 1, "patient_id": null, "age_approx": 50, "sex": "male", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0027076.jpg", "label": 0, "patient_id": null, "age_approx": 75, "sex": "male", "anatom_site_general": "anterior torso"}
@@ -2034,7 +2034,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0071111.jpg", "label": 0, "patient_id": null, "age_approx": 40, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058580.jpg", "label": 0, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": "palms/soles"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0063419.jpg", "label": 2, "patient_id": null, "age_approx": 65, "sex": "female", "anatom_site_general": "lower extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014911.jpg", "label": 1, "patient_id": "IP_5325537", "age_approx": 25, "sex": "female", "anatom_site_general": "anterior torso"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014910.jpg", "label": 1, "patient_id": "IP_8435831", "age_approx": 30, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0061077.jpg", "label": 0, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060924.jpg", "label": 1, "patient_id": null, "age_approx": 40, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062492.jpg", "label": 2, "patient_id": null, "age_approx": 85, "sex": "male", "anatom_site_general": "head/neck"}
@@ -2045,7 +2045,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0068746.jpg", "label": 2, "patient_id": null, "age_approx": 60, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0010041.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "posterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0070190.jpg", "label": 2, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "upper extremity"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0014969.jpg", "label": 1, "patient_id": "IP_3437766", "age_approx": 40, "sex": "male", "anatom_site_general": "lower extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0014968.jpg", "label": 1, "patient_id": "IP_6727905", "age_approx": null, "sex": null, "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0069853.jpg", "label": 4, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0062664.jpg", "label": 2, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0054107.jpg", "label": 1, "patient_id": null, "age_approx": 45, "sex": "female", "anatom_site_general": "anterior torso"}
@@ -2219,7 +2219,7 @@
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0058689.jpg", "label": 2, "patient_id": null, "age_approx": 55, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0024361.jpg", "label": 1, "patient_id": null, "age_approx": 35, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060202.jpg", "label": 2, "patient_id": null, "age_approx": 45, "sex": "male", "anatom_site_general": "anterior torso"}
-{"image_path": "/data/raw/train/isic2019/images/ISIC_0015021.jpg", "label": 1, "patient_id": "IP_8670872", "age_approx": 20, "sex": "female", "anatom_site_general": "upper extremity"}
+{"image_path": "/data/raw/train/isic2019/images/ISIC_0015019.jpg", "label": 1, "patient_id": "IP_7795503", "age_approx": 35, "sex": "female", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0060238.jpg", "label": 0, "patient_id": null, "age_approx": 65, "sex": "male", "anatom_site_general": "anterior torso"}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0014578.jpg", "label": 4, "patient_id": null, "age_approx": 60, "sex": "female", "anatom_site_general": null}
 {"image_path": "/data/raw/train/isic2019/images/ISIC_0061372.jpg", "label": 1, "patient_id": null, "age_approx": 55, "sex": "female", "anatom_site_general": "lower extremity"}
