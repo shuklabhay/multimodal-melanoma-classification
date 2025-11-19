@@ -5,107 +5,107 @@ from modal import App, Image, Volume
 
 app = App(
     "lesion-classification",
-    image=Image.debian_slim(python_version="3.11")
-    .apt_install("unzip", "curl")
-    .uv_sync(),
+    image=Image.debian_slim(python_version="3.11").pip_install("isic-cli").uv_sync(),
     volumes={
         "/data": Volume.from_name("data", create_if_missing=True),
     },
 )
 
 
-@app.function()
+@app.function(timeout=86400)
 def data(step: str) -> None:
-    """Runs Stage 0 data workflows inside Modal.
+    """
+    Collect and sort data inside a Modal volume using the ISIC CLI.
 
     Args:
-        step: workflow step to run ('all', 'download', 'extract', or 'verify').
+        step: workflow step to run ('all', 'download', or 'verify').
     """
 
     if step in ["all", "download"]:
-        print(f"Downloading ISIC 2019 from AWS S3...")
-        download_dir = Path("/data/raw/isic2019")
-        download_dir.mkdir(parents=True, exist_ok=True)
+        print("Downloading ISIC 2019 datasets from ISIC Archive using isic-cli...")
+        base_dir = Path("/data/raw")
+        base_dir.mkdir(parents=True, exist_ok=True)
 
-        isic_2019_files = {
-            "images_zip": "https://s3.amazonaws.com/isic-challenge-2019/ISIC_2019_Training_Input.zip",
-            "ground_truth": "https://s3.amazonaws.com/isic-challenge-2019/ISIC_2019_Training_GroundTruth.csv",
-            "metadata": "https://s3.amazonaws.com/isic-challenge-2019/ISIC_2019_Training_Metadata.csv",
+        collections = {
+            "training": {"id": 65, "dir": base_dir / "train" / "isic2019"},
+            "test": {"id": 72, "dir": base_dir / "test" / "isic2019"},
         }
-        for name, url in isic_2019_files.items():
-            filename = url.split("/")[-1]
-            dest_path = download_dir / filename
-            print(f"  Downloading {filename}...")
+
+        for name, config in collections.items():
+            print(f"\n  Downloading {name} set (collection {config['id']})...")
+            config["dir"].mkdir(parents=True, exist_ok=True)
+
+            print(f"    Downloading metadata...")
+            metadata_output = config["dir"] / "metadata.csv"
             subprocess.run(
                 [
-                    "curl",
-                    "-L",
-                    "-A",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "-e",
-                    "https://challenge.isic-archive.com/",
-                    "--progress-bar",
-                    "-o",
-                    str(dest_path),
-                    url,
+                    "isic",
+                    "metadata",
+                    "download",
+                    "--collections",
+                    str(config["id"]),
+                    "--outfile",
+                    str(metadata_output),
                 ],
                 check=True,
             )
-            print(f"    Saved to {dest_path}")
 
-        print("Download complete!")
+            print(f"    Downloading images...")
+            images_dir = config["dir"] / "images"
+            subprocess.run(
+                [
+                    "isic",
+                    "image",
+                    "download",
+                    "--collections",
+                    str(config["id"]),
+                    str(images_dir),
+                ],
+                check=True,
+            )
 
-    if step in ["all", "extract"]:
-        print(f"\nExtracting images...")
-        zip_path = Path("/data/raw/isic2019/ISIC_2019_Training_Input.zip")
-        extract_dir = Path("/data/raw/isic2019/images")
-        extract_dir.mkdir(exist_ok=True)
+            print(f"    Completed {name} set download")
 
-        subprocess.run(
-            ["unzip", "-q", str(zip_path), "-d", str(extract_dir)], check=True
-        )
-        print(f"  Extracted to {extract_dir}")
+        print("\nDownload complete!")
 
     if step in ["all", "verify"]:
-        print(f"\nVerifying data...")
-        images_dir = Path("/data/raw/isic2019/images")
-        csv_dir = Path("/data/raw/isic2019")
+        print("\nVerifying data...")
+        base_dir = Path("/data/raw")
 
-        image_files = list(images_dir.rglob("*.jpg"))
-        image_count = len(image_files)
+        collections = {
+            "training": {"dir": base_dir / "train" / "isic2019", "expected": 25331},
+            "test": {"dir": base_dir / "test" / "isic2019", "expected": 8238},
+        }
 
-        gt_path = csv_dir / "ISIC_2019_Training_GroundTruth.csv"
-        metadata_path = csv_dir / "ISIC_2019_Training_Metadata.csv"
+        for name, config in collections.items():
+            print(f"\n  Verifying {name} set...")
+            images_dir = config["dir"] / "images"
+            metadata_path = config["dir"] / "metadata.csv"
 
-        print(f"  Images found: {image_count}")
+            if images_dir.exists():
+                image_files = list(images_dir.rglob("*.jpg"))
+                image_count = len(image_files)
+                print(f"    Images found: {image_count}")
+            else:
+                image_count = 0
+                print(f"    ⚠ Images directory not found")
 
-        if gt_path.exists():
-            with open(gt_path) as f:
-                gt_rows = sum(1 for _ in f) - 1
-            print(f"  Ground truth rows: {gt_rows}")
-        else:
-            gt_rows = 0
-            print(f"  ⚠ Ground truth CSV not found")
+            if metadata_path.exists():
+                with open(metadata_path) as f:
+                    metadata_rows = sum(1 for _ in f) - 1
+                print(f"    Metadata rows: {metadata_rows}")
+            else:
+                metadata_rows = 0
+                print(f"    ⚠ Metadata CSV not found")
 
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata_rows = sum(1 for _ in f) - 1
-            print(f"  Metadata rows: {metadata_rows}")
-        else:
-            metadata_rows = 0
-            print(f"  ⚠ Metadata CSV not found")
-
-        expected_images = 25331
-        all_aligned = image_count == gt_rows == metadata_rows == expected_images
-
-        if all_aligned:
-            print(f"✓ All counts aligned at {expected_images}")
-        else:
-            print(f"⚠ Count mismatch detected:")
-            print(f"    Expected: {expected_images}")
-            print(f"    Images: {image_count}")
-            print(f"    Ground truth: {gt_rows}")
-            print(f"    Metadata: {metadata_rows}")
+            expected = config["expected"]
+            if image_count == metadata_rows == expected:
+                print(f"    ✓ All counts aligned at {expected}")
+            else:
+                print(f"    ⚠ Count mismatch:")
+                print(f"      Expected: {expected}")
+                print(f"      Images: {image_count}")
+                print(f"      Metadata: {metadata_rows}")
 
 
 @app.function()

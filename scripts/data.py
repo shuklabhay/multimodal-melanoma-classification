@@ -7,7 +7,7 @@ app = Typer()
 
 @app.command()
 def download() -> None:
-    """Downloads ISIC 2019 dataset from AWS S3 to Modal volume."""
+    """Downloads ISIC 2019 dataset using ISIC CLI to Modal volume."""
     subprocess.run(
         [
             "uv",
@@ -24,15 +24,6 @@ def download() -> None:
 
 
 @app.command()
-def extract() -> None:
-    """Extracts downloaded ZIP archive on Modal volume."""
-    subprocess.run(
-        ["uv", "run", "modal", "run", "-m", "src.use_modal::data", "--step", "extract"],
-        check=True,
-    )
-
-
-@app.command()
 def verify() -> None:
     """Verifies data integrity on Modal volume."""
     subprocess.run(
@@ -43,7 +34,7 @@ def verify() -> None:
 
 @app.command()
 def run_all() -> None:
-    """Runs complete data setup workflow (setup, download, extract, verify)."""
+    """Runs complete data setup workflow (download and verify)."""
     subprocess.run(
         ["uv", "run", "modal", "run", "-m", "src.use_modal::data", "--step", "all"],
         check=True,
