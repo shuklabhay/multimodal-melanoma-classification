@@ -1,11 +1,14 @@
 import subprocess
 from pathlib import Path
 
+import jsonlines
 from modal import App, Image, Volume
+
+from src.pipelines.data_pipeline import df_to_manifest_dict, process_isic2019_train_data
 
 app = App(
     "lesion-classification",
-    image=Image.debian_slim(python_version="3.11").pip_install("isic-cli").uv_sync(),
+    image=Image.debian_slim(python_version="3.11").uv_sync(),
     volumes={
         "/data": Volume.from_name("data", create_if_missing=True),
     },
@@ -106,6 +109,31 @@ def data(step: str) -> None:
                 print(f"      Expected: {expected}")
                 print(f"      Images: {image_count}")
                 print(f"      Metadata: {metadata_rows}")
+
+
+@app.function(timeout=86400)
+def process() -> None:
+    """Processes ISIC2019 training data to create train/val manifests and save to volume."""
+    data_dir = Path("/data/raw/train/isic2019")
+    images_dir = data_dir / "images"
+
+    print("Starting data processing pipeline...")
+    splits = process_isic2019_train_data(data_dir, train_ratio=0.9)
+
+    print("\nConverting to manifests...")
+    manifests_dir = Path("/data/manifests")
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+
+    for split, df in splits.items():
+        manifest_path = manifests_dir / f"split_{split}.jsonl"
+        print(f"Writing {split} manifest to {manifest_path}...")
+
+        manifest_list = df_to_manifest_dict(df, images_dir)
+
+        with jsonlines.open(manifest_path, mode="w") as writer:
+            writer.write_all(manifest_list)
+
+        print(f"Saved {len(manifest_list)} entries to {manifest_path}")
 
 
 @app.function()
