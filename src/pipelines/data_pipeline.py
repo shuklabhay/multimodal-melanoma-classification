@@ -1,10 +1,7 @@
 import random
 from pathlib import Path
-from typing import Any
 
-import imagehash
 import polars as pl
-from PIL import Image
 from tqdm import tqdm
 
 
@@ -37,47 +34,6 @@ def filter_by_label(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def filter_duplicates_by_hash(
-    df: pl.DataFrame, images_dir: Path, threshold: int = 10
-) -> pl.DataFrame:
-    """Removes near-duplicate images using perceptual hashing (dhash).
-
-    Args:
-        df: DataFrame with image metadata including 'image_name' column.
-        images_dir: Path to directory containing images.
-        threshold: Maximum Hamming distance to consider images as duplicates.
-
-    Returns:
-        DataFrame with duplicates removed (keeping first occurrence).
-    """
-    hashes: dict[str, Any] = {}
-    keep_indices: list[int] = []
-
-    for idx, row in enumerate(
-        tqdm(df.iter_rows(named=True), total=len(df), desc="Deduplicating images")
-    ):
-        isic_id = row["isic_id"]
-        image_path = images_dir / f"{isic_id}.jpg"
-
-        if not image_path.exists():
-            continue
-
-        img = Image.open(image_path)
-        img_hash = imagehash.dhash(img)
-
-        is_duplicate = False
-        for existing_hash in hashes.values():
-            if img_hash - existing_hash <= threshold:
-                is_duplicate = True
-                break
-
-        if not is_duplicate:
-            hashes[isic_id] = img_hash
-            keep_indices.append(idx)
-
-    return df[keep_indices]
-
-
 def filter_one_per_patient(df: pl.DataFrame) -> pl.DataFrame:
     """Ensures only one image per patient, selecting randomly if multiple exist.
 
@@ -87,7 +43,10 @@ def filter_one_per_patient(df: pl.DataFrame) -> pl.DataFrame:
     Returns:
         Filtered DataFrame with one image per patient.
     """
-    df_with_row_num = df.with_row_index("_row_idx")
+    df_filled = df.with_columns(
+        pl.col("patient_id").fill_null(pl.format("unknown_{}", pl.col("isic_id")))
+    )
+    df_with_row_num = df_filled.with_row_index("_row_idx")
 
     grouped = df_with_row_num.group_by("patient_id").agg(
         [pl.col("_row_idx").alias("row_indices")]
@@ -127,9 +86,6 @@ def process_isic2019_train_data(
 
     df = filter_by_label(df)
     print(f"After label filtering: {len(df)}")
-
-    df = filter_duplicates_by_hash(df, images_dir)
-    print(f"After duplicate removal: {len(df)}")
 
     df = filter_one_per_patient(df)
     print(f"After per-patient filtering: {len(df)}")
