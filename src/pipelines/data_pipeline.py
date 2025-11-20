@@ -536,23 +536,30 @@ def _plot_site_distribution(
     """Plots train vs val vs test site distribution side-by-side."""
     fig, axes = plt.subplots(1, 3, figsize=(30, 8))
 
-    for ax, (split_name, df) in zip(axes, splits.items()):
+    all_sites_set = set()
+    for df in splits.values():
+        sites_in_split = df.select("anatom_site_general").unique().to_series().to_list()
+        all_sites_set.update(sites_in_split)
+
+    all_sites = sorted([s for s in all_sites_set if s is not None]) + (
+        [None] if None in all_sites_set else []
+    )
+
+    split_order = ["train", "val", "test"]
+    for ax, split_name in zip(axes, split_order):
+        if split_name not in splits:
+            continue
+        df = splits[split_name]
         site_label_counts = (
             df.group_by(["anatom_site_general", "label"])
             .agg(pl.len().alias("count"))
             .sort(["anatom_site_general", "label"])
         )
 
-        sites = (
-            site_label_counts.select("anatom_site_general")
-            .unique()
-            .to_series()
-            .to_list()
-        )
         label_ids = sorted(df.select("label").unique().to_series().to_list())
 
         data_matrix = []
-        for site in sites:
+        for site in all_sites:
             row = []
             for label_id in label_ids:
                 if site is None:
@@ -583,8 +590,8 @@ def _plot_site_distribution(
             rotation=45,
             ha="right",
         )
-        ax.set_yticks(range(len(sites)))
-        ax.set_yticklabels([s if s else "Unknown" for s in sites])
+        ax.set_yticks(range(len(all_sites)))
+        ax.set_yticklabels([s if s else "Unknown" for s in all_sites])
         ax.set_xlabel("Class")
         ax.set_ylabel("Anatomical Site")
         ax.set_title(f"{split_name.capitalize()} Split")
