@@ -6,8 +6,7 @@ The manifests were created by applying the following filters to the raw ISIC2019
 
 1. **Filename filtering**: Removed images with `_unknown` or `_downsampled` in filename
 2. **Label filtering**: Removed entries with "UNK" or "UNKNOWN" diagnostic labels
-3. **Per-patient filtering**: Ensured only one image per patient (random selection if multiple)
-4. **Train/val split**: Split into 90% train / 10% validation
+3. **Patient-level split**: Split patients into 90% train / 10% validation, ensuring no patient appears in both splits
 
 ## Label Mappings
 

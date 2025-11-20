@@ -136,19 +136,44 @@ def main(ctx: Context) -> None:
     print("  3. Create split manifests")
     print("  4. Verify manifests")
     print("  5. Exit")
+    print(
+        "\nEnter 'all' to run all steps, or use commas for multiple (e.g., '1,3' or '2,3,4')"
+    )
 
-    choice = input("\nEnter your choice (1-5): ").strip()
+    choice = input("\nEnter your choice: ").strip().lower()
 
-    if choice == "1":
-        download()
-    elif choice == "2":
-        verify_download()
-    elif choice == "3":
-        process()
-    elif choice == "4":
-        verify_manifests()
-    elif choice == "5":
+    steps_map = {
+        "1": download,
+        "2": verify_download,
+        "3": process,
+        "4": verify_manifests,
+    }
+
+    if choice == "5":
         print("Exiting...")
+        return
+
+    if choice == "all":
+        print("\nRunning all steps...\n")
+        for step_num in ["1", "2", "3", "4"]:
+            print(f"Running step {step_num}...")
+            steps_map[step_num]()
+    elif "," in choice:
+        selected_steps = [s.strip() for s in choice.split(",")]
+        invalid_steps = [s for s in selected_steps if s not in steps_map]
+
+        if invalid_steps:
+            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-4.")
+            return
+
+        print(f"\nRunning steps: {', '.join(selected_steps)}\n")
+        for step_num in selected_steps:
+            print(f"\n{'='*60}")
+            print(f"Running step {step_num}...")
+            print(f"{'='*60}\n")
+            steps_map[step_num]()
+    elif choice in steps_map:
+        steps_map[choice]()
     else:
         print("Invalid choice. Please run the script again.")
 
