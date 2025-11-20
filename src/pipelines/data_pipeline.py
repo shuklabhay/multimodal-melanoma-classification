@@ -280,6 +280,7 @@ def create_train_val_splits(
     df = filter_by_label(df)
     print(f"After label filtering: {len(df)}")
 
+    df = df.sort("isic_id")
     splits = split_by_patient(df, train_ratio=train_ratio)
 
     unique_patients = len(df.select("patient_id").unique())
@@ -552,6 +553,8 @@ def _plot_site_distribution(
         if split_name not in splits:
             continue
         df = splits[split_name]
+        total_samples = len(df)
+
         site_label_counts = (
             df.group_by(["anatom_site_general", "label"])
             .agg(pl.len().alias("count"))
@@ -582,7 +585,9 @@ def _plot_site_distribution(
                         .select("count")
                         .to_series()
                     )
-                row.append(count[0] if len(count) > 0 else 0)
+                count_val = count[0] if len(count) > 0 else 0
+                percentage = (count_val / total_samples) * 100
+                row.append(percentage)
             data_matrix.append(row)
 
         im = ax.imshow(data_matrix, aspect="auto", cmap="YlOrRd")
@@ -596,8 +601,8 @@ def _plot_site_distribution(
         ax.set_yticklabels([s if s else "Unknown" for s in all_sites])
         ax.set_xlabel("Class")
         ax.set_ylabel("Anatomical Site")
-        ax.set_title(f"{split_name.capitalize()} Split")
-        plt.colorbar(im, ax=ax, label="Count")
+        ax.set_title(f"{split_name.capitalize()} Split (n={total_samples})")
+        plt.colorbar(im, ax=ax, label="Percentage (%)")
 
     fig.suptitle("Site Distribution by Class", fontsize=14, fontweight="bold")
     plt.tight_layout()
