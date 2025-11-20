@@ -123,7 +123,9 @@ def split_by_patient(
         pl.col("patient_id").fill_null(pl.format("unknown_{}", pl.col("isic_id")))
     )
 
-    unique_patients = df_filled.select("patient_id").unique().to_series().to_list()
+    unique_patients = (
+        df_filled.select("patient_id").unique().sort("patient_id").to_series().to_list()
+    )
     random.seed(42)
     random.shuffle(unique_patients)
 
