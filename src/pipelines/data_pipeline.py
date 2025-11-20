@@ -107,33 +107,34 @@ def filter_by_label(df: pl.DataFrame) -> pl.DataFrame:
     return df_with_labels.filter(pl.col("_temp_label") != -1).drop("_temp_label")
 
 
-def filter_one_per_patient(df: pl.DataFrame) -> pl.DataFrame:
-    """Ensures only one image per patient, selecting randomly if multiple exist.
+def split_by_patient(
+    df: pl.DataFrame, train_ratio: float = 0.9
+) -> dict[str, pl.DataFrame]:
+    """Splits data by patient ID to ensure no patient appears in both train and val.
 
     Args:
         df: DataFrame with 'patient_id' column.
+        train_ratio: Ratio of patients to use for training (default 0.9).
 
     Returns:
-        Filtered DataFrame with one image per patient.
+        Dictionary with 'train' and 'val' DataFrames containing all images for assigned patients.
     """
     df_filled = df.with_columns(
         pl.col("patient_id").fill_null(pl.format("unknown_{}", pl.col("isic_id")))
     )
-    df_with_row_num = df_filled.with_row_index("_row_idx")
 
-    grouped = df_with_row_num.group_by("patient_id").agg(
-        [pl.col("_row_idx").alias("row_indices")]
-    )
+    unique_patients = df_filled.select("patient_id").unique().to_series().to_list()
+    random.seed(42)
+    random.shuffle(unique_patients)
 
-    selected_rows = []
-    for group in tqdm(
-        grouped.iter_rows(named=True), total=len(grouped), desc="Filtering patients"
-    ):
-        indices = group["row_indices"]
-        selected_idx = random.choice(indices) if isinstance(indices, list) else indices
-        selected_rows.append(selected_idx)
+    split_idx = int(len(unique_patients) * train_ratio)
+    train_patients = set(unique_patients[:split_idx])
+    val_patients = set(unique_patients[split_idx:])
 
-    return df.filter(pl.int_range(0, df.height).is_in(selected_rows))
+    train_df = df_filled.filter(pl.col("patient_id").is_in(train_patients))
+    val_df = df_filled.filter(pl.col("patient_id").is_in(val_patients))
+
+    return {"train": train_df, "val": val_df}
 
 
 def download_isic2019() -> None:
@@ -257,14 +258,14 @@ def verify_download() -> None:
 def create_train_val_splits(
     data_dir: Path, train_ratio: float = 0.9
 ) -> dict[str, pl.DataFrame]:
-    """Main pipeline to process ISIC2019 training data with filtering and splitting.
+    """Main pipeline to process ISIC2019 training data with filtering and patient-level splitting.
 
     Args:
         data_dir: Path to the ISIC2019 training data directory (e.g., /data/raw/train/isic2019).
-        train_ratio: Ratio of data to use for training (default 0.9 for 90/10 split).
+        train_ratio: Ratio of patients to use for training (default 0.9 for 90/10 split).
 
     Returns:
-        Dictionary with 'train' and 'val' keys containing filtered DataFrames.
+        Dictionary with 'train' and 'val' keys containing all images for assigned patients.
     """
     metadata_path = data_dir / "metadata.csv"
 
@@ -277,19 +278,14 @@ def create_train_val_splits(
     df = filter_by_label(df)
     print(f"After label filtering: {len(df)}")
 
-    df = filter_one_per_patient(df)
-    print(f"After per-patient filtering: {len(df)}")
+    splits = split_by_patient(df, train_ratio=train_ratio)
 
-    df = df.sample(fraction=1.0, shuffle=True, seed=42)
+    unique_patients = len(df.select("patient_id").unique())
+    print(f"Total unique patients: {unique_patients}")
+    print(f"Train split: {len(splits['train'])} images")
+    print(f"Val split: {len(splits['val'])} images")
 
-    split_idx = int(len(df) * train_ratio)
-    train_df = df[:split_idx]
-    val_df = df[split_idx:]
-
-    print(f"Train split: {len(train_df)}")
-    print(f"Val split: {len(val_df)}")
-
-    return {"train": train_df, "val": val_df}
+    return splits
 
 
 def create_test_split(data_dir: Path) -> dict[str, pl.DataFrame]:
@@ -412,7 +408,7 @@ def verify_manifests() -> None:
             print(f"    ✓ All patient IDs unique ({unique_patients} patients)")
         else:
             duplicate_count = len(patient_ids) - unique_patients
-            print(f"    ⚠ WARNING: {duplicate_count} duplicate patient IDs found")
+            print(f"    ⚠ WARNING: {duplicate_count} patients have multiple images")
 
         all_manifests[split_name] = entries
 
