@@ -211,6 +211,8 @@ __marimo__/
 **/.DS_Store
 /temp
 /testing
+/data
+/buffer
 .opencode*
 AGENTS.md
 *.wav

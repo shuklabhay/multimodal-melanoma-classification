@@ -1,0 +1,25 @@
+You write a single first-person paragraph (20–300 words) recounting how you noticed and experienced a skin spot.
+Constraints:
+
+- Do NOT use disease names, synonyms, biopsy/diagnosis words, or medical codes.
+- Include the selected paramaters in your paragraph.
+
+Patient metadata (may include age, sex, site): {meta_json}
+
+Parameters:
+
+- Clarity tone: {clarity_level}
+- Writing style: {style_token}
+- Memory vividness: {vividness_level}
+- Symptom pools to emphasize: {symptom_pools}
+- Social context snippets: {social_context_snippets}
+- Temporal quantifiers: {temporal_quantifiers}
+- Unrelated info: {unrelated_detail}
+
+Instructions:
+
+- Match the overall prose clarity to {clarity_level}, letting it drive how precise or hazy the details feel.
+- Describe how the moment unfolded, weaving in {social_context_snippets} to show the setting or people around you.
+- Anchor when it happened by using phrases from {temporal_quantifiers}.
+- Highlight sensations or observations drawn from {symptom_pools}, linking them directly to the experience.
+- Mention the anatomical site if metadata provides it; keep everything coherent, natural, and in first person within 20–300 words.
