@@ -95,9 +95,9 @@ def generate_narratives() -> None:
             "narrative_split_train.jsonl": "assets/manifests/narrative_split_train.jsonl",
             "narrative_split_val.jsonl": "assets/manifests/narrative_split_val.jsonl",
             "narrative_split_test.jsonl": "assets/manifests/narrative_split_test.jsonl",
-            "narrative_style.png": "assets/figures/narrative_style.png",
-            "narrative_memory.png": "assets/figures/narrative_memory.png",
-            "narrative_symptoms.png": "assets/figures/narrative_symptoms.png",
+            "balance_style.png": "assets/figures/balance_style.png",
+            "balance_memory.png": "assets/figures/balance_memory.png",
+            "balance_symptoms.png": "assets/figures/balance_symptoms.png",
         }
     )
 

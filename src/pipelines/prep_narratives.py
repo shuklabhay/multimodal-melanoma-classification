@@ -472,7 +472,7 @@ def _plot_style_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "narrative_style.png", dpi=150)
+    plt.savefig(output_dir / "balance_style.png", dpi=150)
     plt.close()
 
 
@@ -524,7 +524,7 @@ def _plot_memory_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "narrative_memory.png", dpi=150)
+    plt.savefig(output_dir / "balance_memory.png", dpi=150)
     plt.close()
 
 
@@ -574,5 +574,5 @@ def _plot_symptom_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "narrative_symptoms.png", dpi=150)
+    plt.savefig(output_dir / "balance_symptoms.png", dpi=150)
     plt.close()
