@@ -348,7 +348,7 @@ def create_manifests(train_ratio: float = 0.9) -> None:
         splits_with_labels[split] = df_with_labels
 
     for split, df in splits_with_labels.items():
-        manifest_path = buffer_dir / f"split_{split}.jsonl"
+        manifest_path = buffer_dir / f"isic_split_{split}.jsonl"
         print(f"Writing {split} manifest to {manifest_path}...")
 
         current_images_dir = images_dir_test if split == "test" else images_dir_train
@@ -660,6 +660,9 @@ def _plot_gender_distribution(
         male_percentages = [(count / total_samples) * 100 for count in male_counts]
         female_percentages = [(count / total_samples) * 100 for count in female_counts]
 
+        total_male = sum(male_counts)
+        total_female = sum(female_counts)
+
         offset_male = width * (i * 2 - 2)
         offset_female = width * (i * 2 - 1)
 
@@ -667,7 +670,7 @@ def _plot_gender_distribution(
             [xi + offset_male for xi in x],
             male_percentages,
             width,
-            label=f"{split_name.capitalize()} Male (n={total_samples})",
+            label=f"{split_name.capitalize()} Male (n={total_male})",
             color=split_colors[split_name],
             alpha=0.8,
         )
@@ -675,7 +678,7 @@ def _plot_gender_distribution(
             [xi + offset_female for xi in x],
             female_percentages,
             width,
-            label=f"{split_name.capitalize()} Female (n={total_samples})",
+            label=f"{split_name.capitalize()} Female (n={total_female})",
             color=split_colors[split_name],
             alpha=0.5,
         )
