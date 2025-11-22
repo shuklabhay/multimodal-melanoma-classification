@@ -10,7 +10,9 @@ from src.pipelines.prep_narratives import create_narrative_manifests
 
 app = App(
     "lesion-classification",
-    image=Image.debian_slim(python_version="3.11").uv_sync(),
+    image=Image.debian_slim(python_version="3.11")
+    .uv_sync()
+    .add_local_dir("assets", "/root/assets"),
     volumes={
         "/data": Volume.from_name("data", create_if_missing=True),
     },
@@ -38,34 +40,16 @@ def process_images() -> None:
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def process_narratives(narrative_options: dict) -> None:
-    """Generates narratives for all image manifests using Nous API.
-
-    Args:
-        narrative_options: Dictionary containing loaded narrative options.
-    """
-    create_narrative_manifests(narrative_options)
+def process_narratives() -> None:
+    """Generates narratives for all image manifests using Nous API."""
+    create_narrative_manifests()
 
 
 @app.local_entrypoint()
-def narratives_entrypoint(
-    narrative_options_path: str = "assets/narrative_options",
-) -> None:
-    """Local entrypoint to generate narratives, loading options locally and passing to Modal.
-
-    Args:
-        narrative_options_path: Path to narrative options directory.
-    """
-    from pathlib import Path
-
-    from src.pipelines.prep_narratives import load_narrative_options
-
-    options_dir = Path(narrative_options_path)
-    print(f"Loading narrative options from {options_dir}...")
-    narrative_options = load_narrative_options(options_dir)
-
+def narratives_entrypoint() -> None:
+    """Local entrypoint to generate narratives."""
     print("Calling Modal to generate narratives...")
-    process_narratives.remote(narrative_options)
+    process_narratives.remote()
     print("✓ Narrative generation complete on Modal")
 
 

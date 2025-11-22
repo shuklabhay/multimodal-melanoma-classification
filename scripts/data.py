@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -61,7 +62,17 @@ def process_images() -> None:
         ["uv", "run", "modal", "run", "-m", "src.use_modal::process_images"],
         check=True,
     )
-    _use_buffer({"jsonl": "assets/manifests", "png": "assets/figures"})
+    _use_buffer(
+        {
+            "isic_split_train.jsonl": "assets/manifests/isic_split_train.jsonl",
+            "isic_split_val.jsonl": "assets/manifests/isic_split_val.jsonl",
+            "isic_split_test.jsonl": "assets/manifests/isic_split_test.jsonl",
+            "label_distribution.png": "assets/figures/label_distribution.png",
+            "age_distribution.png": "assets/figures/age_distribution.png",
+            "sex_distribution.png": "assets/figures/sex_distribution.png",
+            "site_distribution.png": "assets/figures/site_distribution.png",
+        }
+    )
 
 
 @app.command()
@@ -75,12 +86,17 @@ def verify_image_manifests() -> None:
 @app.command()
 def generate_narratives() -> None:
     """Generates narratives for all splits, downloads manifests locally."""
-    print("Generating narratives on Modal...")
     subprocess.run(
         ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
         check=True,
     )
-    _use_buffer({"narrative_jsonl": "assets/manifests"})
+    _use_buffer(
+        {
+            "narrative_split_train.jsonl": "assets/manifests/narrative_split_train.jsonl",
+            "narrative_split_val.jsonl": "assets/manifests/narrative_split_val.jsonl",
+            "narrative_split_test.jsonl": "assets/manifests/narrative_split_test.jsonl",
+        }
+    )
 
 
 @app.command()
@@ -91,12 +107,13 @@ def verify_narrative_manifests() -> None:
     verify_narrative_manifests()
 
 
-def _use_buffer(file_mappings: dict) -> None:
-    """Downloads buffer from Modal, moves files to target directories, and cleans up.
+def _use_buffer(file_map: dict[str, str]) -> None:
+    """Downloads buffer from Modal, moves mapped files to destinations, deletes rest.
 
     Args:
-        file_mappings: Dict mapping file types to target directories.
+        file_map: Dict mapping buffer filenames to local destination paths.
     """
+
     print("\nDownloading outputs from Modal Volume...")
     subprocess.run(
         ["uv", "run", "modal", "volume", "get", "--force", "data", "buffer", "."],
@@ -108,24 +125,16 @@ def _use_buffer(file_mappings: dict) -> None:
         return
 
     for file in buffer_dir.iterdir():
-        if file.suffix == ".jsonl":
-            if "narrative_jsonl" in file_mappings and "narrative" in file.name:
-                target_dir = Path(file_mappings["narrative_jsonl"])
-                target_dir.mkdir(parents=True, exist_ok=True)
-                file.rename(target_dir / file.name)
-                print(f"  Moved {file.name} to {target_dir}")
-            elif "jsonl" in file_mappings:
-                target_dir = Path(file_mappings["jsonl"])
-                target_dir.mkdir(parents=True, exist_ok=True)
-                file.rename(target_dir / file.name)
-                print(f"  Moved {file.name} to {target_dir}")
-        elif file.suffix == ".png" and "png" in file_mappings:
-            target_dir = Path(file_mappings["png"])
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file.rename(target_dir / file.name)
-            print(f"  Moved {file.name} to {target_dir}")
+        if file.name in file_map:
+            dest_path = Path(file_map[file.name])
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            file.rename(dest_path)
+            print(f"  Moved {file.name} to {dest_path}")
+        else:
+            file.unlink()
+            print(f"  Deleted {file.name}")
 
-    buffer_dir.rmdir()
+    shutil.rmtree(buffer_dir)
     subprocess.run(
         ["uv", "run", "modal", "volume", "rm", "data", "buffer", "-r"],
         check=True,
@@ -147,8 +156,6 @@ def main(ctx: Context) -> None:
     print("  4. Generate narratives")
     print("  5. Run all")
     print("  6. Exit")
-    print("\nEnter comma-separated choices for multiple (e.g., '1,2,3')")
-
     choice = input("\nEnter your choice: ").strip().lower()
 
     steps_map = {

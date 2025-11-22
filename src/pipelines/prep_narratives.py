@@ -188,10 +188,10 @@ def generate_narrative_with_nous(
         Generated narrative text extracted from XML tags.
     """
     api_key = os.environ.get("NOUS_API_KEY")
-    api_url = os.environ.get("NOUS_URL")
+    api_url = os.environ.get("NOUS_BASE_URL")
 
     if not api_key or not api_url:
-        raise ValueError("NOUS_API_KEY and NOUS_URL must be set in environment")
+        raise ValueError("NOUS_API_KEY and NOUS_BASE_URL must be set in environment")
 
     meta_json = json.dumps({k: v for k, v in metadata.items() if v is not None})
 
@@ -224,25 +224,20 @@ def generate_narrative_with_nous(
         return ""
 
     raw_response = raw_response.strip()
-
-    try:
-        root = ET.fromstring(f"<root>{raw_response}</root>")
-        narrative_elem = root.find("narrative")
-        if narrative_elem is not None and narrative_elem.text:
-            return narrative_elem.text.strip()
-    except ET.ParseError:
-        pass  # Fallback to raw_response if parsing fails
+    root = ET.fromstring(f"<root>{raw_response}</root>")
+    narrative_elem = root.find("narrative")
+    if narrative_elem is not None and narrative_elem.text:
+        return narrative_elem.text.strip()
 
     return raw_response
 
 
-def create_narrative_manifests(narrative_options: dict) -> None:
-    """Main orchestrator for narrative generation and manifest creation.
-
-    Args:
-        narrative_options: Dictionary with loaded narrative options.
-    """
+def create_narrative_manifests() -> None:
+    """Main orchestrator for narrative generation and manifest creation."""
     print("Starting narrative generation pipeline...")
+
+    options_dir = Path("/root/assets/narrative_options")
+    narrative_options = load_narrative_options(options_dir)
 
     rng = random.Random(42)
 
@@ -262,7 +257,11 @@ def create_narrative_manifests(narrative_options: dict) -> None:
         manifest_filename = f"isic_split_{split}.jsonl"
         image_manifest_path = None
 
-        for possible_dir in [buffer_dir, base_dir / "manifests"]:
+        for possible_dir in [
+            buffer_dir,
+            base_dir / "manifests",
+            Path("/root/assets/manifests"),
+        ]:
             candidate = possible_dir / manifest_filename
             if candidate.exists():
                 image_manifest_path = candidate
@@ -294,10 +293,12 @@ def create_narrative_manifests(narrative_options: dict) -> None:
             narrative_text = generate_narrative_with_nous(
                 metadata, params, narrative_options["prompt_template"]
             )
+            print(narrative_text)
             text_path.write_text(narrative_text)
 
             narrative_entry = {
                 "text_path": str(text_path),
+                "text": narrative_text,
                 "label": label,
                 "patient_id": entry.get("patient_id", ""),
                 "style": params["style"],
