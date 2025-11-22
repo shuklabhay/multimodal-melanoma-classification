@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import random
@@ -174,10 +175,10 @@ def select_narrative_parameters(
     }
 
 
-def generate_narrative_with_nous(
+async def generate_narrative_with_nous(
     metadata: dict, params: dict, prompt_template: str
 ) -> str:
-    """Makes API call to Nous (Hermes 40B) to generate narrative using OpenAI client.
+    """Makes async API call to Nous (Hermes 40B) to generate narrative using OpenAI client.
 
     Args:
         metadata: Patient metadata (age, sex, site).
@@ -187,6 +188,8 @@ def generate_narrative_with_nous(
     Returns:
         Generated narrative text extracted from XML tags.
     """
+    from openai import AsyncOpenAI
+
     api_key = os.environ.get("NOUS_API_KEY")
     api_url = os.environ.get("NOUS_BASE_URL")
 
@@ -210,9 +213,9 @@ def generate_narrative_with_nous(
         unrelated_detail=unrelated_detail,
     )
 
-    client = OpenAI(api_key=api_key, base_url=api_url)
+    client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="Hermes-4-70B",
         messages=[{"role": "user", "content": filled_prompt}],
         max_tokens=400,
@@ -276,41 +279,75 @@ def create_narrative_manifests() -> None:
 
         print(f"  Loaded {len(image_entries)} image entries")
 
-        narrative_entries = []
-        for entry in tqdm(image_entries, desc=f"Generating {split} narratives"):
-            label = entry["label"]
-            image_path = Path(entry["image_path"])
-            text_filename = image_path.stem + ".txt"
-            text_path = narratives_dir / text_filename
+        async def generate_batch(batch_entries):
+            """Generate narratives for a batch of entries concurrently."""
+            tasks = []
+            for entry in batch_entries:
+                label = entry["label"]
+                metadata = {
+                    "age_approx": entry.get("age_approx"),
+                    "sex": entry.get("sex"),
+                    "anatom_site_general": entry.get("anatom_site_general"),
+                }
+                params = select_narrative_parameters(label, narrative_options, rng)
+                tasks.append(
+                    (
+                        entry,
+                        params,
+                        generate_narrative_with_nous(
+                            metadata, params, narrative_options["prompt_template"]
+                        ),
+                    )
+                )
 
-            metadata = {
-                "age_approx": entry.get("age_approx"),
-                "sex": entry.get("sex"),
-                "anatom_site_general": entry.get("anatom_site_general"),
-            }
+            results = []
+            for entry, params, task in tasks:
+                narrative_text = await task
+                results.append((entry, params, narrative_text))
+            return results
 
-            params = select_narrative_parameters(label, narrative_options, rng)
-            narrative_text = generate_narrative_with_nous(
-                metadata, params, narrative_options["prompt_template"]
-            )
-            print(narrative_text)
-            text_path.write_text(narrative_text)
+        async def process_all_entries(batch_size: int = 8):
+            """Process all entries in batches.
 
-            narrative_entry = {
-                "text_path": str(text_path),
-                "text": narrative_text,
-                "label": label,
-                "patient_id": entry.get("patient_id", ""),
-                "style": params["style"],
-                "style_category": params["style_category"],
-                "memory": params["memory"],
-                "memory_category": params["memory_category"],
-                "social_context": params["social_context"],
-                "temporal_quantifier": params["temporal_quantifier"],
-                "symptoms": params["symptoms"],
-            }
+            Args:
+                batch_size: Number of concurrent API requests per batch.
+            """
+            narrative_entries = []
 
-            narrative_entries.append(narrative_entry)
+            for i in tqdm(
+                range(0, len(image_entries), batch_size),
+                desc=f"Generating {split} narratives",
+            ):
+                batch = image_entries[i : i + batch_size]
+                results = await generate_batch(batch)
+
+                for entry, params, narrative_text in results:
+                    label = entry["label"]
+                    image_path = Path(entry["image_path"])
+                    text_filename = image_path.stem + ".txt"
+                    text_path = narratives_dir / text_filename
+
+                    print(narrative_text)
+                    text_path.write_text(narrative_text)
+
+                    narrative_entry = {
+                        "text_path": str(text_path),
+                        "text": narrative_text,
+                        "label": label,
+                        "patient_id": entry.get("patient_id", ""),
+                        "style": params["style"],
+                        "style_category": params["style_category"],
+                        "memory": params["memory"],
+                        "memory_category": params["memory_category"],
+                        "social_context": params["social_context"],
+                        "temporal_quantifier": params["temporal_quantifier"],
+                        "symptoms": params["symptoms"],
+                    }
+                    narrative_entries.append(narrative_entry)
+
+            return narrative_entries
+
+        narrative_entries = asyncio.run(process_all_entries())
 
         manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
         print(f"  Writing narrative manifest to {manifest_path}...")
