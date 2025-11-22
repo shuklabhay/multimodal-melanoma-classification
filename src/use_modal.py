@@ -1,3 +1,4 @@
+import modal
 from modal import App, Image, Volume
 
 from src.pipelines.prep_images import (
@@ -5,6 +6,7 @@ from src.pipelines.prep_images import (
     download_isic2019,
     verify_download,
 )
+from src.pipelines.prep_narratives import create_narrative_manifests
 
 app = App(
     "lesion-classification",
@@ -16,8 +18,8 @@ app = App(
 
 
 @app.function(timeout=86400)
-def data(step: str) -> None:
-    """Collect and sort data inside a Modal volume using the ISIC CLI.
+def images(step: str) -> None:
+    """Collect and sort image data inside a Modal volume using the ISIC CLI.
 
     Args:
         step: workflow step to run ('all', 'download', 'verify_download').
@@ -30,19 +32,41 @@ def data(step: str) -> None:
 
 
 @app.function(timeout=86400)
-def process() -> None:
-    """Processes ISIC2019 training data to create train/val manifests and save to volume."""
+def process_images() -> None:
+    """Processes ISIC2019 image data to create train/val/test manifests and save to volume."""
     create_manifests(train_ratio=0.9)
 
 
-@app.function()
-def narratives(split: str = "train") -> None:
-    """Generates or validates narratives inside Modal.
+@app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
+def process_narratives(narrative_options: dict) -> None:
+    """Generates narratives for all image manifests using Nous API.
 
     Args:
-        split: dataset split to process (default 'train').
+        narrative_options: Dictionary containing loaded narrative options.
     """
-    raise NotImplementedError("Narratives task is not implemented.")
+    create_narrative_manifests(narrative_options)
+
+
+@app.local_entrypoint()
+def narratives_entrypoint(
+    narrative_options_path: str = "assets/narrative_options",
+) -> None:
+    """Local entrypoint to generate narratives, loading options locally and passing to Modal.
+
+    Args:
+        narrative_options_path: Path to narrative options directory.
+    """
+    from pathlib import Path
+
+    from src.pipelines.prep_narratives import load_narrative_options
+
+    options_dir = Path(narrative_options_path)
+    print(f"Loading narrative options from {options_dir}...")
+    narrative_options = load_narrative_options(options_dir)
+
+    print("Calling Modal to generate narratives...")
+    process_narratives.remote(narrative_options)
+    print("✓ Narrative generation complete on Modal")
 
 
 @app.function()
