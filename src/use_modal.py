@@ -1,10 +1,6 @@
-import subprocess
-from pathlib import Path
-
-import jsonlines
 from modal import App, Image, Volume
 
-from src.pipelines.data_pipeline import (
+from src.pipelines.prep_images import (
     create_manifests,
     download_isic2019,
     verify_download,

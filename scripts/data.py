@@ -48,7 +48,7 @@ def verify_download() -> None:
 @app.command()
 def verify_manifests() -> None:
     """Verifies created manifests for data quality (runs locally)."""
-    from src.pipelines.data_pipeline import verify_manifests as verify_fn
+    from src.pipelines.isic_pipeline import verify_manifests as verify_fn
 
     verify_fn()
 
