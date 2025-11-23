@@ -7,7 +7,7 @@ from pathlib import Path
 
 import jsonlines
 import matplotlib.pyplot as plt
-from openai import OpenAI
+from openai import AsyncOpenAI
 from tqdm import tqdm
 
 from src.pipelines.label_config import LABEL_CONFIG
@@ -188,7 +188,6 @@ async def generate_narrative_with_nous(
     Returns:
         Generated narrative text extracted from XML tags.
     """
-    from openai import AsyncOpenAI
 
     api_key = os.environ.get("NOUS_API_KEY")
     api_url = os.environ.get("NOUS_BASE_URL")
@@ -306,7 +305,7 @@ def create_narrative_manifests() -> None:
                 results.append((entry, params, narrative_text))
             return results
 
-        async def process_all_entries(batch_size: int = 8):
+        async def process_all_entries(batch_size: int = 16):
             """Process all entries in batches.
 
             Args:
@@ -321,13 +320,16 @@ def create_narrative_manifests() -> None:
                 batch = image_entries[i : i + batch_size]
                 results = await generate_batch(batch)
 
-                for entry, params, narrative_text in results:
+                sample_idx = rng.randint(0, len(results) - 1)
+
+                for idx, (entry, params, narrative_text) in enumerate(results):
                     label = entry["label"]
                     image_path = Path(entry["image_path"])
                     text_filename = image_path.stem + ".txt"
                     text_path = narratives_dir / text_filename
 
-                    print(narrative_text)
+                    if idx == sample_idx:
+                        print(narrative_text)
                     text_path.write_text(narrative_text)
 
                     narrative_entry = {
