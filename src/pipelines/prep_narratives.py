@@ -315,7 +315,7 @@ def create_narrative_manifests() -> None:
 
             for i in tqdm(
                 range(0, len(image_entries), batch_size),
-                desc=f"Generating {split} narratives",
+                desc=f"Generating {split} narrative batches",
             ):
                 batch = image_entries[i : i + batch_size]
                 results = await generate_batch(batch)
