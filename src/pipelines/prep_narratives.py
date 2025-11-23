@@ -8,6 +8,7 @@ from pathlib import Path
 import aiofiles
 import jsonlines
 import matplotlib.pyplot as plt
+from aiolimiter import AsyncLimiter
 from openai import AsyncOpenAI
 from tqdm import tqdm
 
@@ -177,12 +178,17 @@ def select_narrative_parameters(
 
 
 async def generate_narrative_with_nous(
-    client: AsyncOpenAI, metadata: dict, params: dict, prompt_template: str
+    client: AsyncOpenAI,
+    limiter: AsyncLimiter,
+    metadata: dict,
+    params: dict,
+    prompt_template: str,
 ) -> str:
     """Makes async API call to Nous (Hermes 40B) to generate narrative using OpenAI client.
 
     Args:
         client: Initialized AsyncOpenAI client.
+        limiter: Rate limiter to prevent hitting API limits.
         metadata: Patient metadata (age, sex, site).
         params: Selected narrative parameters.
         prompt_template: Prompt template string.
@@ -208,12 +214,13 @@ async def generate_narrative_with_nous(
         unrelated_detail=unrelated_detail,
     )
 
-    response = await client.chat.completions.create(
-        model="Hermes-4-70B",
-        messages=[{"role": "user", "content": filled_prompt}],
-        max_tokens=400,
-        temperature=0.8,
-    )
+    async with limiter:
+        response = await client.chat.completions.create(
+            model="Hermes-4-70B",
+            messages=[{"role": "user", "content": filled_prompt}],
+            max_tokens=400,
+            temperature=0.8,
+        )
 
     raw_response = response.choices[0].message.content
     if not raw_response:
@@ -272,7 +279,9 @@ def create_narrative_manifests() -> None:
 
         print(f"  Loaded {len(image_entries)} image entries")
 
-        async def generate_batch(client: AsyncOpenAI, batch_entries):
+        async def generate_batch(
+            client: AsyncOpenAI, limiter: AsyncLimiter, batch_entries
+        ):
             """Generate narratives for a batch of entries concurrently."""
             tasks = []
             for entry in batch_entries:
@@ -289,6 +298,7 @@ def create_narrative_manifests() -> None:
                         params,
                         generate_narrative_with_nous(
                             client,
+                            limiter,
                             metadata,
                             params,
                             narrative_options["prompt_template"],
@@ -306,7 +316,7 @@ def create_narrative_manifests() -> None:
                 results.append((entries_list[i], params_list[i], text))
             return results
 
-        async def process_all_entries(batch_size: int = 16):
+        async def process_all_entries(batch_size: int = 8):
             """Process all entries in batches.
 
             Args:
@@ -321,6 +331,7 @@ def create_narrative_manifests() -> None:
                 )
 
             client = AsyncOpenAI(api_key=api_key, base_url=api_url)
+            limiter = AsyncLimiter(90, 60)
             narrative_entries = []
 
             for i in tqdm(
@@ -328,7 +339,7 @@ def create_narrative_manifests() -> None:
                 desc=f"Generating {split} narrative batches",
             ):
                 batch = image_entries[i : i + batch_size]
-                results = await generate_batch(client, batch)
+                results = await generate_batch(client, limiter, batch)
 
                 sample_idx = rng.randint(0, len(results) - 1)
 
