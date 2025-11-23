@@ -51,13 +51,3 @@ def narratives_entrypoint() -> None:
     print("Calling Modal to generate narratives...")
     process_narratives.remote()
     print("✓ Narrative generation complete on Modal")
-
-
-@app.function()
-def visualize(report: str = "splits") -> None:
-    """Produces Stage 0 QA visualizations inside Modal.
-
-    Args:
-        report: type of report to generate (default 'splits').
-    """
-    raise NotImplementedError("Visualize task is not implemented.")

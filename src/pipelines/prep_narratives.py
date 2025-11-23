@@ -5,6 +5,7 @@ import random
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import aiofiles
 import jsonlines
 import matplotlib.pyplot as plt
 from openai import AsyncOpenAI
@@ -176,11 +177,12 @@ def select_narrative_parameters(
 
 
 async def generate_narrative_with_nous(
-    metadata: dict, params: dict, prompt_template: str
+    client: AsyncOpenAI, metadata: dict, params: dict, prompt_template: str
 ) -> str:
     """Makes async API call to Nous (Hermes 40B) to generate narrative using OpenAI client.
 
     Args:
+        client: Initialized AsyncOpenAI client.
         metadata: Patient metadata (age, sex, site).
         params: Selected narrative parameters.
         prompt_template: Prompt template string.
@@ -188,12 +190,6 @@ async def generate_narrative_with_nous(
     Returns:
         Generated narrative text extracted from XML tags.
     """
-
-    api_key = os.environ.get("NOUS_API_KEY")
-    api_url = os.environ.get("NOUS_BASE_URL")
-
-    if not api_key or not api_url:
-        raise ValueError("NOUS_API_KEY and NOUS_BASE_URL must be set in environment")
 
     meta_json = json.dumps({k: v for k, v in metadata.items() if v is not None})
 
@@ -211,8 +207,6 @@ async def generate_narrative_with_nous(
         temporal_quantifiers=params["temporal_quantifier"],
         unrelated_detail=unrelated_detail,
     )
-
-    client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
     response = await client.chat.completions.create(
         model="Hermes-4-70B",
@@ -278,7 +272,7 @@ def create_narrative_manifests() -> None:
 
         print(f"  Loaded {len(image_entries)} image entries")
 
-        async def generate_batch(batch_entries):
+        async def generate_batch(client: AsyncOpenAI, batch_entries):
             """Generate narratives for a batch of entries concurrently."""
             tasks = []
             for entry in batch_entries:
@@ -294,15 +288,22 @@ def create_narrative_manifests() -> None:
                         entry,
                         params,
                         generate_narrative_with_nous(
-                            metadata, params, narrative_options["prompt_template"]
+                            client,
+                            metadata,
+                            params,
+                            narrative_options["prompt_template"],
                         ),
                     )
                 )
 
+            entries_list = [t[0] for t in tasks]
+            params_list = [t[1] for t in tasks]
+            coros = [t[2] for t in tasks]
+            narrative_texts = await asyncio.gather(*coros)
+
             results = []
-            for entry, params, task in tasks:
-                narrative_text = await task
-                results.append((entry, params, narrative_text))
+            for i, text in enumerate(narrative_texts):
+                results.append((entries_list[i], params_list[i], text))
             return results
 
         async def process_all_entries(batch_size: int = 16):
@@ -311,6 +312,15 @@ def create_narrative_manifests() -> None:
             Args:
                 batch_size: Number of concurrent API requests per batch.
             """
+            api_key = os.environ.get("NOUS_API_KEY")
+            api_url = os.environ.get("NOUS_BASE_URL")
+
+            if not api_key or not api_url:
+                raise ValueError(
+                    "NOUS_API_KEY and NOUS_BASE_URL must be set in environment"
+                )
+
+            client = AsyncOpenAI(api_key=api_key, base_url=api_url)
             narrative_entries = []
 
             for i in tqdm(
@@ -318,7 +328,7 @@ def create_narrative_manifests() -> None:
                 desc=f"Generating {split} narrative batches",
             ):
                 batch = image_entries[i : i + batch_size]
-                results = await generate_batch(batch)
+                results = await generate_batch(client, batch)
 
                 sample_idx = rng.randint(0, len(results) - 1)
 
@@ -330,7 +340,9 @@ def create_narrative_manifests() -> None:
 
                     if idx == sample_idx:
                         print(narrative_text)
-                    text_path.write_text(narrative_text)
+
+                    async with aiofiles.open(text_path, mode="w") as f:
+                        await f.write(narrative_text)
 
                     narrative_entry = {
                         "text_path": str(text_path),
