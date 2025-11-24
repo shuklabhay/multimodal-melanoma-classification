@@ -1,9 +1,10 @@
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from typer import Context, Typer
+from typer import Context, Option, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -83,13 +84,25 @@ def verify_image_manifests() -> None:
     verify_manifests()
 
 
-@app.command()
-def generate_narratives() -> None:
-    """Generates narratives for all splits, downloads manifests locally."""
-    subprocess.run(
-        ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
-        check=True,
+@app.command("generate-narratives")
+def generate_narratives(
+    resume_mode: bool = Option(
+        False,
+        "--continue",
+        help="Continue generating existing narratives instead of regenerating all",
     )
+) -> None:
+    """Generates narratives for all splits, downloads manifests locally."""
+    if resume_mode:
+        print("Running in continue mode - will skip existing narratives")
+    else:
+        print("Running in fresh mode - will regenerate all narratives")
+
+    cmd = ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"]
+    if resume_mode:
+        cmd.append("--continue-from-existing")
+
+    subprocess.run(cmd, check=True)
     _use_buffer(
         {
             "narrative_split_train.jsonl": "assets/manifests/narrative_split_train.jsonl",

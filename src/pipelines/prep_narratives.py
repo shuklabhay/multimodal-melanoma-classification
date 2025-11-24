@@ -239,6 +239,14 @@ def create_narrative_manifests() -> None:
     """Main orchestrator for narrative generation and manifest creation."""
     print("Starting narrative generation pipeline...")
 
+    continue_from_existing = (
+        os.environ.get("CONTINUE_NARRATIVES", "false").lower() == "true"
+    )
+    if continue_from_existing:
+        print("Will continue from where left off")
+    else:
+        print("Fresh start mode: Will regenerate all narratives")
+
     options_dir = Path("/root/assets/narrative_options")
     narrative_options = load_narrative_options(options_dir)
 
@@ -316,11 +324,14 @@ def create_narrative_manifests() -> None:
                 results.append((entries_list[i], params_list[i], text))
             return results
 
-        async def process_all_entries(batch_size: int = 4):
+        async def process_all_entries(
+            batch_size: int = 4, continue_from_existing: bool = True
+        ):
             """Process all entries in batches.
 
             Args:
                 batch_size: Number of concurrent API requests per batch.
+                continue_from_existing: If True, skip entries that already have narratives.
             """
             api_key = os.environ.get("NOUS_API_KEY")
             api_url = os.environ.get("NOUS_BASE_URL")
@@ -334,11 +345,31 @@ def create_narrative_manifests() -> None:
             limiter = AsyncLimiter(90, 60)
             narrative_entries = []
 
+            entries_to_process = image_entries
+            if continue_from_existing:
+                existing_count = 0
+                entries_to_process = []
+                for entry in image_entries:
+                    image_path = Path(entry["image_path"])
+                    text_filename = image_path.stem + ".txt"
+                    text_path = narratives_dir / text_filename
+                    if text_path.exists():
+                        existing_count += 1
+                    else:
+                        entries_to_process.append(entry)
+
+                print(
+                    f"  Found {existing_count} existing narratives, processing {len(entries_to_process)} remaining"
+                )
+
+            if not entries_to_process:
+                print("  All narratives already generated, loading from disk...")
+
             for i in tqdm(
-                range(0, len(image_entries), batch_size),
+                range(0, len(entries_to_process), batch_size),
                 desc=f"Generating {split} narrative batches",
             ):
-                batch = image_entries[i : i + batch_size]
+                batch = entries_to_process[i : i + batch_size]
                 results = await generate_batch(client, limiter, batch)
 
                 sample_idx = rng.randint(0, len(results) - 1)
@@ -370,9 +401,44 @@ def create_narrative_manifests() -> None:
                     }
                     narrative_entries.append(narrative_entry)
 
+            if continue_from_existing:
+                print("  Loading existing narratives from disk...")
+                for entry in image_entries:
+                    image_path = Path(entry["image_path"])
+                    text_filename = image_path.stem + ".txt"
+                    text_path = narratives_dir / text_filename
+
+                    if text_path.exists():
+                        async with aiofiles.open(text_path, mode="r") as f:
+                            narrative_text = await f.read()
+
+                        if not any(
+                            ne["text_path"] == str(text_path)
+                            for ne in narrative_entries
+                        ):
+                            params = select_narrative_parameters(
+                                entry["label"], narrative_options, rng
+                            )
+                            narrative_entry = {
+                                "text_path": str(text_path),
+                                "text": narrative_text,
+                                "label": entry["label"],
+                                "patient_id": entry.get("patient_id", ""),
+                                "style": params["style"],
+                                "style_category": params["style_category"],
+                                "memory": params["memory"],
+                                "memory_category": params["memory_category"],
+                                "social_context": params["social_context"],
+                                "temporal_quantifier": params["temporal_quantifier"],
+                                "symptoms": params["symptoms"],
+                            }
+                            narrative_entries.append(narrative_entry)
+
             return narrative_entries
 
-        narrative_entries = asyncio.run(process_all_entries())
+        narrative_entries = asyncio.run(
+            process_all_entries(continue_from_existing=continue_from_existing)
+        )
 
         manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
         print(f"  Writing narrative manifest to {manifest_path}...")

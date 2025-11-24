@@ -1,3 +1,5 @@
+import os
+
 import modal
 from modal import App, Image, Volume
 
@@ -40,14 +42,23 @@ def process_images() -> None:
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def process_narratives() -> None:
-    """Generates narratives for all image manifests using Nous API."""
+def process_narratives(continue_from_existing: bool = False) -> None:
+    """Generates narratives for all image manifests using Nous API.
+
+    Args:
+        continue_from_existing: If True, resume from existing narratives.
+    """
+    os.environ["CONTINUE_NARRATIVES"] = "true" if continue_from_existing else "false"
     create_narrative_manifests()
 
 
 @app.local_entrypoint()
-def narratives_entrypoint() -> None:
-    """Local entrypoint to generate narratives."""
+def narratives_entrypoint(continue_from_existing: bool = False) -> None:
+    """Local entrypoint to generate narratives.
+
+    Args:
+        continue_from_existing: If True, resume from existing narratives.
+    """
     print("Calling Modal to generate narratives...")
-    process_narratives.remote()
+    process_narratives.remote(continue_from_existing=continue_from_existing)
     print("✓ Narrative generation complete on Modal")
