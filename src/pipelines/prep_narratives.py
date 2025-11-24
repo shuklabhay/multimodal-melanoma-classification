@@ -342,7 +342,7 @@ def create_narrative_manifests() -> None:
                 )
 
             client = AsyncOpenAI(api_key=api_key, base_url=api_url)
-            limiter = AsyncLimiter(90, 60)
+            limiter = AsyncLimiter(95, 60)
             narrative_entries = []
 
             entries_to_process = image_entries
