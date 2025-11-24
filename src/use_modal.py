@@ -8,7 +8,7 @@ from src.pipelines.prep_images import (
     download_isic2019,
     verify_download,
 )
-from src.pipelines.prep_narratives import create_narrative_manifests
+from src.pipelines.prep_narratives import generate_narrative_texts
 
 app = App(
     "lesion-classification",
@@ -42,23 +42,18 @@ def process_images() -> None:
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def process_narratives(continue_from_existing: bool = False) -> None:
-    """Generates narratives for all image manifests using Nous API.
+def process_narratives() -> None:
+    """Generates narratives from pre-generated manifests using Nous API.
 
-    Args:
-        continue_from_existing: If True, resume from existing narratives.
+    Expects narrative manifests to already exist in /root/assets/manifests.
+    Only generates text content and saves to volume.
     """
-    os.environ["CONTINUE_NARRATIVES"] = "true" if continue_from_existing else "false"
-    create_narrative_manifests()
+    generate_narrative_texts()
 
 
 @app.local_entrypoint()
-def narratives_entrypoint(continue_from_existing: bool = False) -> None:
-    """Local entrypoint to generate narratives.
-
-    Args:
-        continue_from_existing: If True, resume from existing narratives.
-    """
-    print("Calling Modal to generate narratives...")
-    process_narratives.remote(continue_from_existing=continue_from_existing)
-    print("✓ Narrative generation complete on Modal")
+def narratives_entrypoint() -> None:
+    """Local entrypoint to generate narratives."""
+    print("Calling Modal to generate narrative texts...")
+    process_narratives.remote()
+    print("✓ Narrative text generation complete on Modal")

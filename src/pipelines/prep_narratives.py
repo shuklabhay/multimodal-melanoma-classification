@@ -166,6 +166,9 @@ def select_narrative_parameters(
     social_context = rng.choice(narrative_options["social_contexts"])
     temporal_quantifier = rng.choice(narrative_options["temporal_quantifiers"])
 
+    common_letters = "etaoinshrdlcumwfgypbvkjxqz"
+    lipogram_letter = rng.choice(common_letters)
+
     return {
         "style": style,
         "memory": memory,
@@ -174,6 +177,7 @@ def select_narrative_parameters(
         "symptoms": selected_symptoms,
         "style_category": categorize_style(style),
         "memory_category": categorize_memory(memory),
+        "lipogram_letter": lipogram_letter,
     }
 
 
@@ -202,6 +206,7 @@ async def generate_narrative_with_nous(
     clarity_level = "clear" if params["memory_category"] == "precise" else "imprecise"
     symptom_pools = ", ".join(params["symptoms"]) if params["symptoms"] else "none"
     unrelated_detail = ""
+    lipogram_instruction = f"IMPORTANT: Try to avoid using the letter '{params['lipogram_letter']}' as much as possible in your response."
 
     filled_prompt = prompt_template.format(
         meta_json=meta_json,
@@ -213,6 +218,8 @@ async def generate_narrative_with_nous(
         temporal_quantifiers=params["temporal_quantifier"],
         unrelated_detail=unrelated_detail,
     )
+
+    filled_prompt = f"{filled_prompt}\n\n{lipogram_instruction}"
 
     async with limiter:
         response = await client.chat.completions.create(
@@ -235,102 +242,161 @@ async def generate_narrative_with_nous(
     return raw_response
 
 
-def create_narrative_manifests() -> None:
-    """Main orchestrator for narrative generation and manifest creation."""
-    print("Starting narrative generation pipeline...")
+def create_local_narrative_manifests() -> None:
+    """Generates complete narrative manifests with all parameters locally (no text generation).
 
-    continue_from_existing = (
-        os.environ.get("CONTINUE_NARRATIVES", "false").lower() == "true"
-    )
-    if continue_from_existing:
-        print("Continuing where generation last left off")
-
-    options_dir = Path("/root/assets/narrative_options")
+    Creates narrative manifests with all metadata and parameters pre-selected for each image.
+    Text content is left empty to be filled by Modal generation later.
+    """
+    options_dir = Path("assets/narrative_options")
     narrative_options = load_narrative_options(options_dir)
 
     rng = random.Random(42)
 
-    base_dir = Path("/data/raw")
-    buffer_dir = Path("/data/buffer")
-    buffer_dir.mkdir(parents=True, exist_ok=True)
+    manifests_dir = Path("assets/manifests")
+    manifests_dir.mkdir(parents=True, exist_ok=True)
 
     splits = ["train", "val", "test"]
     for split in splits:
-        print(f"\nProcessing {split} split...")
-
-        narratives_dir = (
-            base_dir / ("train" if split == "train" else "test") / "narratives"
-        )
-        narratives_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest_filename = f"isic_split_{split}.jsonl"
-        image_manifest_path = None
-
-        for possible_dir in [
-            buffer_dir,
-            base_dir / "manifests",
-            Path("/root/assets/manifests"),
-        ]:
-            candidate = possible_dir / manifest_filename
-            if candidate.exists():
-                image_manifest_path = candidate
-                break
-
-        if not image_manifest_path:
-            print(f"  Warning: Image manifest not found for {split} split")
+        image_manifest_path = manifests_dir / f"isic_split_{split}.jsonl"
+        if not image_manifest_path.exists():
             continue
 
         with jsonlines.open(image_manifest_path) as reader:
             image_entries = list(reader)
 
-        print(f"  Loaded {len(image_entries)} image entries")
+        narrative_manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        narrative_entries = []
+
+        for entry in image_entries:
+            label = entry["label"]
+            image_path = Path(entry["image_path"])
+
+            text_filename = image_path.stem + ".txt"
+            text_path_train = f"/data/raw/train/narratives/{text_filename}"
+            text_path_test = f"/data/raw/test/narratives/{text_filename}"
+            text_path = text_path_train if split == "train" else text_path_test
+
+            params = select_narrative_parameters(label, narrative_options, rng)
+
+            narrative_entry = {
+                "text_path": text_path,
+                "text": "",
+                "label": label,
+                "patient_id": entry.get("patient_id", ""),
+                "style": params["style"],
+                "style_category": params["style_category"],
+                "memory": params["memory"],
+                "memory_category": params["memory_category"],
+                "social_context": params["social_context"],
+                "temporal_quantifier": params["temporal_quantifier"],
+                "symptoms": params["symptoms"],
+                "lipogram_letter": params["lipogram_letter"],
+                "age_approx": entry.get("age_approx"),
+                "sex": entry.get("sex"),
+                "anatom_site_general": entry.get("anatom_site_general"),
+            }
+
+            narrative_entries.append(narrative_entry)
+
+        with jsonlines.open(narrative_manifest_path, mode="w") as writer:
+            writer.write_all(narrative_entries)
+
+
+def visualize_narrative_manifests() -> None:
+    """Generates and saves narrative distribution visualizations from local manifests."""
+    manifests_dir = Path("assets/manifests")
+    figures_dir = Path("assets/figures")
+    figures_dir.mkdir(parents=True, exist_ok=True)
+
+    all_manifests = {}
+    splits = ["train", "val", "test"]
+
+    for split in splits:
+        manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        if manifest_path.exists():
+            with jsonlines.open(manifest_path) as reader:
+                all_manifests[split] = list(reader)
+
+    if all_manifests:
+        _generate_distribution_summaries(all_manifests, figures_dir)
+
+
+def generate_narrative_texts() -> None:
+    """Generates narrative text content from pre-generated manifests on Modal.
+
+    Loads complete narrative manifests (with all parameters already selected) from
+    /root/assets/manifests and generates only the text content using the Nous API.
+    """
+    options_dir = Path("/root/assets/narrative_options")
+    prompt_template = (options_dir / "prompt.txt").read_text()
+
+    base_dir = Path("/data/raw")
+    buffer_dir = Path("/data/buffer")
+    buffer_dir.mkdir(parents=True, exist_ok=True)
+
+    manifests_dir = Path("/root/assets/manifests")
+
+    splits = ["train", "val", "test"]
+    for split in splits:
+        narratives_dir = (
+            base_dir / ("train" if split == "train" else "test") / "narratives"
+        )
+        narratives_dir.mkdir(parents=True, exist_ok=True)
+
+        narrative_manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        if not narrative_manifest_path.exists():
+            continue
+
+        with jsonlines.open(narrative_manifest_path) as reader:
+            narrative_entries = list(reader)
 
         async def generate_batch(
-            client: AsyncOpenAI, limiter: AsyncLimiter, batch_entries
-        ):
-            """Generate narratives for a batch of entries concurrently."""
+            client: AsyncOpenAI, limiter: AsyncLimiter, batch_entries: list
+        ) -> list:
+            """Generate narrative texts for a batch of entries concurrently."""
             tasks = []
             for entry in batch_entries:
-                label = entry["label"]
                 metadata = {
                     "age_approx": entry.get("age_approx"),
                     "sex": entry.get("sex"),
                     "anatom_site_general": entry.get("anatom_site_general"),
                 }
-                params = select_narrative_parameters(label, narrative_options, rng)
+
+                params = {
+                    "style": entry["style"],
+                    "memory": entry["memory"],
+                    "memory_category": entry["memory_category"],
+                    "social_context": entry["social_context"],
+                    "temporal_quantifier": entry["temporal_quantifier"],
+                    "symptoms": entry["symptoms"],
+                    "lipogram_letter": entry["lipogram_letter"],
+                }
+
                 tasks.append(
                     (
                         entry,
-                        params,
                         generate_narrative_with_nous(
                             client,
                             limiter,
                             metadata,
                             params,
-                            narrative_options["prompt_template"],
+                            prompt_template,
                         ),
                     )
                 )
 
             entries_list = [t[0] for t in tasks]
-            params_list = [t[1] for t in tasks]
-            coros = [t[2] for t in tasks]
+            coros = [t[1] for t in tasks]
             narrative_texts = await asyncio.gather(*coros)
 
             results = []
             for i, text in enumerate(narrative_texts):
-                results.append((entries_list[i], params_list[i], text))
+                results.append((entries_list[i], text))
             return results
 
-        async def process_all_entries(
-            batch_size: int = 4, continue_from_existing: bool = True
-        ):
-            """Process all entries in batches, writing manifest incrementally.
-
-            Args:
-                batch_size: Number of concurrent API requests per batch.
-                continue_from_existing: If True, load existing entries from manifest and only generate missing ones.
-            """
+        async def process_all_entries(batch_size: int = 4):
+            """Process all entries in batches, generating text and writing to files."""
             api_key = os.environ.get("NOUS_API_KEY")
             api_url = os.environ.get("NOUS_BASE_URL")
 
@@ -342,38 +408,18 @@ def create_narrative_manifests() -> None:
             client = AsyncOpenAI(api_key=api_key, base_url=api_url)
             limiter = AsyncLimiter(95, 60)
 
-            existing_manifest_entries = {}
-            if continue_from_existing and manifest_path.exists():
-                print("  Loading existing manifest entries...")
-                with jsonlines.open(manifest_path) as reader:
-                    for entry in reader:
-                        existing_manifest_entries[entry["text_path"]] = entry
-                print(
-                    f"  Found {len(existing_manifest_entries)} existing manifest entries"
-                )
+            output_manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
+            manifest_file = await aiofiles.open(output_manifest_path, mode="w")
 
-            manifest_file = await aiofiles.open(manifest_path, mode="w")
             entries_to_generate = []
-            generated_count = 0
-            loaded_count = 0
-
-            for entry in image_entries:
-                image_path = Path(entry["image_path"])
-                text_filename = image_path.stem + ".txt"
-                text_path = narratives_dir / text_filename
-                str_text_path = str(text_path)
-
-                if str_text_path in existing_manifest_entries:
-                    await manifest_file.write(
-                        json.dumps(existing_manifest_entries[str_text_path]) + "\n"
-                    )
-                    loaded_count += 1
-                else:
+            for entry in narrative_entries:
+                text_path = Path(entry["text_path"])
+                if not text_path.exists():
                     entries_to_generate.append((entry, text_path))
-
-            print(
-                f"  Loaded {loaded_count} existing entries, generating {len(entries_to_generate)} new narratives"
-            )
+                else:
+                    existing_text = text_path.read_text()
+                    entry["text"] = existing_text
+                    await manifest_file.write(json.dumps(entry) + "\n")
 
             if entries_to_generate:
                 for i in tqdm(
@@ -384,63 +430,30 @@ def create_narrative_manifests() -> None:
                     batch_entries = [item[0] for item in batch_data]
 
                     results = await generate_batch(client, limiter, batch_entries)
-                    sample_idx = rng.randint(0, len(results) - 1)
 
-                    for idx, (
-                        (entry, text_path),
-                        (_, params, narrative_text),
-                    ) in enumerate(zip(batch_data, results)):
-                        label = entry["label"]
-
-                        if idx == sample_idx:
-                            print(narrative_text)
+                    for idx, ((entry, text_path), (_, narrative_text)) in enumerate(
+                        zip(batch_data, results)
+                    ):
+                        if i == 0 and idx == 0:
+                            print(f"\n  Sample narrative:\n{narrative_text}\n")
 
                         async with aiofiles.open(text_path, mode="w") as f:
                             await f.write(narrative_text)
 
-                        narrative_entry = {
-                            "text_path": str(text_path),
-                            "text": narrative_text,
-                            "label": label,
-                            "patient_id": entry.get("patient_id", ""),
-                            "style": params["style"],
-                            "style_category": params["style_category"],
-                            "memory": params["memory"],
-                            "memory_category": params["memory_category"],
-                            "social_context": params["social_context"],
-                            "temporal_quantifier": params["temporal_quantifier"],
-                            "symptoms": params["symptoms"],
-                        }
+                        entry["text"] = narrative_text
 
-                        await manifest_file.write(json.dumps(narrative_entry) + "\n")
+                        await manifest_file.write(json.dumps(entry) + "\n")
                         await manifest_file.flush()
-                        generated_count += 1
 
             await manifest_file.close()
-            return loaded_count + generated_count
+            return len(narrative_entries)
 
-        manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
+        total_entries = asyncio.run(process_all_entries())
 
-        total_entries = asyncio.run(
-            process_all_entries(continue_from_existing=continue_from_existing)
-        )
+        print(f"  Completed {split} split: {total_entries} total narrative entries")
 
-        print(
-            f"  Completed {split} split: {total_entries} total narrative entries in manifest"
-        )
-
-    print("\nNarrative generation complete!")
-
-    print("\nGenerating distribution summaries...")
-    all_manifests = {}
-    for split in splits:
-        manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
-        if manifest_path.exists():
-            with jsonlines.open(manifest_path) as reader:
-                all_manifests[split] = list(reader)
-
-    _generate_distribution_summaries(all_manifests, buffer_dir)
-    print(f"\nAll outputs saved to {buffer_dir}")
+    print("\n✓ Narrative text generation complete!")
+    print(f"All outputs saved to {buffer_dir}")
 
 
 def verify_narrative_manifests() -> None:

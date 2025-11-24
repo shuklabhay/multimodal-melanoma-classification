@@ -85,34 +85,30 @@ def verify_image_manifests() -> None:
 
 
 @app.command("generate-narratives")
-def generate_narratives(
-    resume_mode: bool = Option(
-        False,
-        "--continue",
-        help="Continue generating existing narratives instead of regenerating all",
+def generate_narratives() -> None:
+    """Generates narrative manifests locally, visualizations, then narrative texts via Modal."""
+    from src.pipelines.prep_narratives import create_local_narrative_manifests
+
+    create_local_narrative_manifests()
+
+    from src.pipelines.prep_narratives import visualize_narrative_manifests
+
+    visualize_narrative_manifests()
+
+    subprocess.run(
+        ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
+        check=True,
     )
-) -> None:
-    """Generates narratives for all splits, downloads manifests locally."""
-    if resume_mode:
-        print("Running in continue mode - will skip existing narratives")
-    else:
-        print("Running in fresh mode - will regenerate all narratives")
 
-    cmd = ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"]
-    if resume_mode:
-        cmd.append("--continue-from-existing")
-
-    subprocess.run(cmd, check=True)
     _use_buffer(
         {
             "narrative_split_train.jsonl": "assets/manifests/narrative_split_train.jsonl",
             "narrative_split_val.jsonl": "assets/manifests/narrative_split_val.jsonl",
             "narrative_split_test.jsonl": "assets/manifests/narrative_split_test.jsonl",
-            "balance_style.png": "assets/figures/balance_style.png",
-            "balance_memory.png": "assets/figures/balance_memory.png",
-            "balance_symptoms.png": "assets/figures/balance_symptoms.png",
         }
     )
+
+    print("\n✓ Narrative generation complete!")
 
 
 @app.command()
