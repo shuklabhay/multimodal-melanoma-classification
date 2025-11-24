@@ -184,7 +184,7 @@ async def generate_narrative_with_nous(
     params: dict,
     prompt_template: str,
 ) -> str:
-    """Makes async API call to Nous (Hermes 40B) to generate narrative using OpenAI client.
+    """Makes async API call to Nous (Hermes 4) to generate narrative using OpenAI client.
 
     Args:
         client: Initialized AsyncOpenAI client.
@@ -316,7 +316,7 @@ def create_narrative_manifests() -> None:
                 results.append((entries_list[i], params_list[i], text))
             return results
 
-        async def process_all_entries(batch_size: int = 8):
+        async def process_all_entries(batch_size: int = 4):
             """Process all entries in batches.
 
             Args:
