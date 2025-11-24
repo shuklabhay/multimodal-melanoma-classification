@@ -243,9 +243,7 @@ def create_narrative_manifests() -> None:
         os.environ.get("CONTINUE_NARRATIVES", "false").lower() == "true"
     )
     if continue_from_existing:
-        print("Will continue from where left off")
-    else:
-        print("Fresh start mode: Will regenerate all narratives")
+        print("Continuing where generation last left off")
 
     options_dir = Path("/root/assets/narrative_options")
     narrative_options = load_narrative_options(options_dir)
