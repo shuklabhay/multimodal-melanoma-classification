@@ -159,25 +159,38 @@ async def generate_narrative_with_nous(
         structure=params["structure"],
     )
 
-    async with limiter:
-        response = await client.chat.completions.create(
-            model="Hermes-4-70B",
-            messages=[{"role": "user", "content": filled_prompt}],
-            max_tokens=400,
-            temperature=0.8,
-        )
+    max_attempts = 3
+    last_error = None
 
-    raw_response = response.choices[0].message.content
-    if not raw_response:
-        raise ValueError("API response content is empty or missing.")
+    for attempt in range(max_attempts):
+        try:
+            async with limiter:
+                response = await client.chat.completions.create(
+                    model="Hermes-4-70B",
+                    messages=[{"role": "user", "content": filled_prompt}],
+                    max_tokens=400,
+                    temperature=0.8,
+                )
 
-    raw_response = raw_response.strip()
-    root = ET.fromstring(f"<root>{raw_response}</root>")
-    narrative_elem = root.find("narrative")
-    if narrative_elem is not None and narrative_elem.text:
-        return narrative_elem.text.strip()
+            raw_response = response.choices[0].message.content
+            if not raw_response:
+                raise ValueError("API response content is empty or missing.")
 
-    return raw_response
+            raw_response = raw_response.strip()
+            root = ET.fromstring(f"<root>{raw_response}</root>")
+            narrative_elem = root.find("narrative")
+            if narrative_elem is not None and narrative_elem.text:
+                return narrative_elem.text.strip()
+
+            return raw_response
+
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(1)
+            continue
+
+    raise last_error if last_error else RuntimeError("Failed after max attempts")
 
 
 def create_local_narrative_manifests() -> None:
@@ -258,22 +271,16 @@ def visualize_narrative_manifests() -> None:
 
 
 def generate_narrative_texts() -> None:
-    """Generates narrative text content from pre-generated manifests on Modal.
-
-    Loads complete narrative manifests (with all parameters already selected) from
-    /root/assets/manifests and generates only the text content using the Nous API.
-    """
+    """Generates narrative text content from pre-generated manifests on Modal."""
     options_dir = Path("/root/assets/narrative_options")
     prompt_template = (options_dir / "prompt.txt").read_text()
 
     base_dir = Path("/data/raw")
-    buffer_dir = Path("/data/buffer")
-    buffer_dir.mkdir(parents=True, exist_ok=True)
-
     manifests_dir = Path("/root/assets/manifests")
 
     splits = ["train", "val", "test"]
     for split in splits:
+        print(f"Starting generation for {split} split...")
         narratives_dir = (
             base_dir / ("train" if split == "train" else "test") / "narratives"
         )
@@ -342,52 +349,27 @@ def generate_narrative_texts() -> None:
             client = AsyncOpenAI(api_key=api_key, base_url=api_url)
             limiter = AsyncLimiter(95, 60)
 
-            output_manifest_path = buffer_dir / f"narrative_split_{split}.jsonl"
-            manifest_file = await aiofiles.open(output_manifest_path, mode="w")
+            for i in tqdm(
+                range(0, len(narrative_entries), batch_size),
+                desc=f"Generating {split} narrative batches",
+            ):
+                batch_entries = narrative_entries[i : i + batch_size]
+                results = await generate_batch(client, limiter, batch_entries)
 
-            entries_to_generate = []
-            for entry in narrative_entries:
-                text_path = Path(entry["text_path"])
-                if not text_path.exists():
-                    entries_to_generate.append((entry, text_path))
-                else:
-                    existing_text = text_path.read_text()
-                    entry["text"] = existing_text
-                    await manifest_file.write(json.dumps(entry) + "\n")
+                sample_entry, sample_text = results[0]
+                print(f"\nSample: {sample_entry['text_path']}\n{sample_text}\n")
 
-            if entries_to_generate:
-                for i in tqdm(
-                    range(0, len(entries_to_generate), batch_size),
-                    desc=f"Generating {split} narrative batches",
-                ):
-                    batch_data = entries_to_generate[i : i + batch_size]
-                    batch_entries = [item[0] for item in batch_data]
+                for entry, narrative_text in results:
+                    text_path = Path(entry["text_path"])
+                    async with aiofiles.open(text_path, mode="w") as f:
+                        await f.write(narrative_text)
 
-                    results = await generate_batch(client, limiter, batch_entries)
-                    random_idx = random.randint(0, len(results) - 1)
-                    _, sample_narrative = results[random_idx]
-                    print(f"\n  Sample narrative:\n{sample_narrative}\n")
-
-                    for idx, ((entry, text_path), (_, narrative_text)) in enumerate(
-                        zip(batch_data, results)
-                    ):
-                        async with aiofiles.open(text_path, mode="w") as f:
-                            await f.write(narrative_text)
-
-                        entry["text"] = narrative_text
-
-                        await manifest_file.write(json.dumps(entry) + "\n")
-                        await manifest_file.flush()
-
-            await manifest_file.close()
             return len(narrative_entries)
 
         total_entries = asyncio.run(process_all_entries())
-
-        print(f"  Completed {split} split: {total_entries} total narrative entries")
+        print(f"  Completed {split} split: {total_entries} narratives generated")
 
     print("\n✓ Narrative text generation complete!")
-    print(f"All outputs saved to {buffer_dir}")
 
 
 def verify_narrative_manifests() -> None:
