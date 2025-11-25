@@ -13,10 +13,11 @@ app = Typer()
 
 @app.command()
 def run_all() -> None:
-    """Runs complete data pipeline: download, process images, generate narratives."""
+    """Runs complete data pipeline: download images, process data, and generate narratives."""
     download_images()
     verify_images()
     process_images()
+    generate_narrative_manifests()
     generate_narratives()
 
 
@@ -86,15 +87,7 @@ def verify_image_manifests() -> None:
 
 @app.command("generate-narratives")
 def generate_narratives() -> None:
-    """Generates narrative manifests locally, visualizations, then narrative texts via Modal."""
-    from src.pipelines.prep_narratives import create_local_narrative_manifests
-
-    create_local_narrative_manifests()
-
-    from src.pipelines.prep_narratives import visualize_narrative_manifests
-
-    visualize_narrative_manifests()
-
+    """Generates narrative text outputs on Modal using prepared manifests and downloads assets."""
     subprocess.run(
         ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
         check=True,
@@ -109,6 +102,16 @@ def generate_narratives() -> None:
     )
 
     print("\n✓ Narrative generation complete!")
+
+
+@app.command("generate-narrative-manifests")
+def generate_narrative_manifests() -> None:
+    """Generates local narrative manifests and supporting distribution visualizations."""
+    from src.pipelines.prep_narratives import create_local_narrative_manifests
+    from src.pipelines.prep_narratives import visualize_narrative_manifests
+
+    create_local_narrative_manifests()
+    visualize_narrative_manifests()
 
 
 @app.command()
@@ -165,20 +168,22 @@ def main(ctx: Context) -> None:
     print("  1. Download images")
     print("  2. Verify download")
     print("  3. Create image manifests")
-    print("  4. Generate narratives")
-    print("  5. Run all")
-    print("  6. Exit")
+    print("  4. Generate narrative manifests")
+    print("  5. Generate narratives")
+    print("  6. Run all")
+    print("  7. Exit")
     choice = input("\nEnter your choice: ").strip().lower()
 
     steps_map = {
         "1": download_images,
         "2": verify_images,
         "3": process_images,
-        "4": generate_narratives,
-        "5": run_all,
+        "4": generate_narrative_manifests,
+        "5": generate_narratives,
+        "6": run_all,
     }
 
-    if choice == "6":
+    if choice == "7":
         print("Exiting...")
         return
 
@@ -187,7 +192,7 @@ def main(ctx: Context) -> None:
         invalid_steps = [s for s in selected_steps if s not in steps_map]
 
         if invalid_steps:
-            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-6.")
+            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-7.")
             return
 
         print(f"\nRunning steps: {', '.join(selected_steps)}\n")
