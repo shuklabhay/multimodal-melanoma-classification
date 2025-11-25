@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from typer import Context, Option, Typer
+from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -107,8 +107,10 @@ def generate_narratives() -> None:
 @app.command("generate-narrative-manifests")
 def generate_narrative_manifests() -> None:
     """Generates local narrative manifests and supporting distribution visualizations."""
-    from src.pipelines.prep_narratives import create_local_narrative_manifests
-    from src.pipelines.prep_narratives import visualize_narrative_manifests
+    from src.pipelines.prep_narratives import (
+        create_local_narrative_manifests,
+        visualize_narrative_manifests,
+    )
 
     create_local_narrative_manifests()
     visualize_narrative_manifests()
