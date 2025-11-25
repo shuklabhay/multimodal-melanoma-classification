@@ -159,39 +159,25 @@ async def generate_narrative_with_nous(
         structure=params["structure"],
     )
 
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            async with limiter:
-                response = await client.chat.completions.create(
-                    model="Hermes-4-70B",
-                    messages=[{"role": "user", "content": filled_prompt}],
-                    max_tokens=400,
-                    temperature=0.8,
-                )
+    async with limiter:
+        response = await client.chat.completions.create(
+            model="Hermes-4-70B",
+            messages=[{"role": "user", "content": filled_prompt}],
+            max_tokens=400,
+            temperature=0.8,
+        )
 
-            raw_response = response.choices[0].message.content
-            if not raw_response:
-                if attempt < max_retries - 1:
-                    continue
-                return ""
+    raw_response = response.choices[0].message.content
+    if not raw_response:
+        raise ValueError("API response content is empty or missing.")
 
-            raw_response = raw_response.strip()
-            root = ET.fromstring(f"<root>{raw_response}</root>")
-            narrative_elem = root.find("narrative")
-            if narrative_elem is not None and narrative_elem.text:
-                return narrative_elem.text.strip()
+    raw_response = raw_response.strip()
+    root = ET.fromstring(f"<root>{raw_response}</root>")
+    narrative_elem = root.find("narrative")
+    if narrative_elem is not None and narrative_elem.text:
+        return narrative_elem.text.strip()
 
-            return raw_response
-
-        except (ET.ParseError, Exception) as e:
-            if attempt < max_retries - 1:
-                continue
-            raise RuntimeError(
-                f"Failed to generate narrative after {max_retries} attempts. Last error: {e}"
-            )
-
-    return ""
+    return raw_response
 
 
 def create_local_narrative_manifests() -> None:
@@ -378,13 +364,13 @@ def generate_narrative_texts() -> None:
                     batch_entries = [item[0] for item in batch_data]
 
                     results = await generate_batch(client, limiter, batch_entries)
+                    random_idx = random.randint(0, len(results) - 1)
+                    _, sample_narrative = results[random_idx]
+                    print(f"\n  Sample narrative:\n{sample_narrative}\n")
 
                     for idx, ((entry, text_path), (_, narrative_text)) in enumerate(
                         zip(batch_data, results)
                     ):
-                        if i == 0 and idx == 0:
-                            print(f"\n  Sample narrative:\n{narrative_text}\n")
-
                         async with aiofiles.open(text_path, mode="w") as f:
                             await f.write(narrative_text)
 
