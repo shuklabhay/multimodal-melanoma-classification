@@ -87,18 +87,10 @@ def verify_image_manifests() -> None:
 
 @app.command("generate-narratives")
 def generate_narratives() -> None:
-    """Generates narrative text outputs on Modal using prepared manifests and downloads assets."""
+    """Generates narrative text outputs on Modal using prepared manifests."""
     subprocess.run(
         ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
         check=True,
-    )
-
-    _use_buffer(
-        {
-            "narrative_split_train.jsonl": "assets/manifests/narrative_split_train.jsonl",
-            "narrative_split_val.jsonl": "assets/manifests/narrative_split_val.jsonl",
-            "narrative_split_test.jsonl": "assets/manifests/narrative_split_test.jsonl",
-        }
     )
 
     print("\n✓ Narrative generation complete!")
