@@ -14,13 +14,6 @@ from tqdm import tqdm
 
 from src.pipelines.label_config import LABEL_CONFIG
 
-STYLE_QUOTAS = {
-    "informal": 0.35,
-    "formal": 0.15,
-    "casual": 0.30,
-    "neutral": 0.20,
-}
-
 MEMORY_QUOTAS = {
     "vague": 0.25,
     "approximate": 0.30,
@@ -57,58 +50,12 @@ def load_narrative_options(options_dir: Path) -> dict:
     return {
         "styles": load_text_file(options_dir / "style.txt"),
         "memory": load_text_file(options_dir / "memory.txt"),
-        "social_contexts": load_text_file(options_dir / "social_context.txt"),
         "temporal_quantifiers": load_text_file(
             options_dir / "temporal_quantifiers.txt"
         ),
+        "structures": load_text_file(options_dir / "structure.txt"),
         "prompt_template": (options_dir / "prompt.txt").read_text(),
     }
-
-
-def categorize_style(style: str) -> str:
-    """Categorizes a style string into higher-level groups for quota tracking.
-
-    Args:
-        style: Style string to categorize.
-
-    Returns:
-        Category name (informal, formal, casual, or neutral).
-    """
-    informal_keywords = [
-        "informal",
-        "casual",
-        "colloquial",
-        "slangy",
-        "laidback",
-        "relaxed",
-        "friendly",
-    ]
-    formal_keywords = [
-        "formal",
-        "professional",
-        "businesslike",
-        "technical",
-        "legalistic",
-        "scholarly",
-    ]
-    casual_keywords = [
-        "plain",
-        "simple",
-        "direct",
-        "concise",
-        "straightforward",
-    ]
-
-    style_lower = style.lower()
-
-    if any(kw in style_lower for kw in informal_keywords):
-        return "informal"
-    elif any(kw in style_lower for kw in formal_keywords):
-        return "formal"
-    elif any(kw in style_lower for kw in casual_keywords):
-        return "casual"
-    else:
-        return "neutral"
 
 
 def categorize_memory(memory: str) -> str:
@@ -120,7 +67,11 @@ def categorize_memory(memory: str) -> str:
     Returns:
         Category name (vague, approximate, precise, or detailed).
     """
-    if "vague" in memory.lower() or "fragmentary" in memory.lower():
+    if (
+        "vague" in memory.lower()
+        or "fragmentary" in memory.lower()
+        or "contradictory" in memory.lower()
+    ):
         return "vague"
     elif "approximate" in memory.lower() or "anchored" in memory.lower():
         return "approximate"
@@ -163,21 +114,16 @@ def select_narrative_parameters(
 
     style = rng.choice(narrative_options["styles"])
     memory = rng.choice(narrative_options["memory"])
-    social_context = rng.choice(narrative_options["social_contexts"])
     temporal_quantifier = rng.choice(narrative_options["temporal_quantifiers"])
-
-    common_letters = "etaoinshrdlcumwfgypbvkjxqz"
-    lipogram_letter = rng.choice(common_letters)
+    structure = rng.choice(narrative_options["structures"])
 
     return {
         "style": style,
         "memory": memory,
-        "social_context": social_context,
         "temporal_quantifier": temporal_quantifier,
         "symptoms": selected_symptoms,
-        "style_category": categorize_style(style),
         "memory_category": categorize_memory(memory),
-        "lipogram_letter": lipogram_letter,
+        "structure": structure,
     }
 
 
@@ -203,23 +149,15 @@ async def generate_narrative_with_nous(
 
     meta_json = json.dumps({k: v for k, v in metadata.items() if v is not None})
 
-    clarity_level = "clear" if params["memory_category"] == "precise" else "imprecise"
     symptom_pools = ", ".join(params["symptoms"]) if params["symptoms"] else "none"
-    unrelated_detail = ""
-    lipogram_instruction = f"IMPORTANT: Try to avoid using the letter '{params['lipogram_letter']}' as much as possible in your response."
-
     filled_prompt = prompt_template.format(
         meta_json=meta_json,
-        clarity_level=clarity_level,
         style_token=params["style"],
         vividness_level=params["memory"],
         symptom_pools=symptom_pools,
-        social_context_snippets=params["social_context"],
         temporal_quantifiers=params["temporal_quantifier"],
-        unrelated_detail=unrelated_detail,
+        structure=params["structure"],
     )
-
-    filled_prompt = f"{filled_prompt}\n\n{lipogram_instruction}"
 
     async with limiter:
         response = await client.chat.completions.create(
@@ -285,13 +223,11 @@ def create_local_narrative_manifests() -> None:
                 "label": label,
                 "patient_id": entry.get("patient_id", ""),
                 "style": params["style"],
-                "style_category": params["style_category"],
                 "memory": params["memory"],
                 "memory_category": params["memory_category"],
-                "social_context": params["social_context"],
                 "temporal_quantifier": params["temporal_quantifier"],
                 "symptoms": params["symptoms"],
-                "lipogram_letter": params["lipogram_letter"],
+                "structure": params["structure"],
                 "age_approx": entry.get("age_approx"),
                 "sex": entry.get("sex"),
                 "anatom_site_general": entry.get("anatom_site_general"),
@@ -367,10 +303,9 @@ def generate_narrative_texts() -> None:
                     "style": entry["style"],
                     "memory": entry["memory"],
                     "memory_category": entry["memory_category"],
-                    "social_context": entry["social_context"],
                     "temporal_quantifier": entry["temporal_quantifier"],
                     "symptoms": entry["symptoms"],
-                    "lipogram_letter": entry["lipogram_letter"],
+                    "structure": entry["structure"],
                 }
 
                 tasks.append(
@@ -493,19 +428,12 @@ def verify_narrative_manifests() -> None:
         symptom_counts = {0: 0, 1: 0, 2: 0, 3: 0}
 
         for entry in entries:
-            style_cat = entry.get("style_category", "unknown")
+
             memory_cat = entry.get("memory_category", "unknown")
             num_symptoms = len(entry.get("symptoms", []))
 
-            style_counts[style_cat] = style_counts.get(style_cat, 0) + 1
             memory_counts[memory_cat] = memory_counts.get(memory_cat, 0) + 1
             symptom_counts[num_symptoms] = symptom_counts.get(num_symptoms, 0) + 1
-
-        print(f"    Style distribution:")
-        for cat, count in sorted(style_counts.items()):
-            pct = (count / len(entries)) * 100
-            target = STYLE_QUOTAS.get(cat, 0) * 100
-            print(f"      {cat}: {count} ({pct:.1f}%, target: {target:.1f}%)")
 
         print(f"    Memory distribution:")
         for cat, count in sorted(memory_counts.items()):
@@ -541,61 +469,9 @@ def _generate_distribution_summaries(
     label_names = {
         label_id: config["name"] for label_id, config in LABEL_CONFIG.items()
     }
-    _plot_style_distribution(manifests, label_names, output_dir)
+
     _plot_memory_distribution(manifests, label_names, output_dir)
     _plot_symptom_distribution(manifests, label_names, output_dir)
-
-
-def _plot_style_distribution(
-    manifests: dict[str, list[dict]], label_names: dict, output_dir: Path
-) -> None:
-    """Plots style category distribution across splits."""
-    fig, ax = plt.subplots(1, 1, figsize=(14, 7))
-
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
-    style_categories = sorted(STYLE_QUOTAS.keys())
-    x = range(len(style_categories))
-    width = 0.25
-
-    for i, split_name in enumerate(split_order):
-        if split_name not in manifests:
-            continue
-
-        entries = manifests[split_name]
-        total_samples = len(entries)
-
-        style_counts = {}
-        for entry in entries:
-            style_cat = entry.get("style_category", "neutral")
-            style_counts[style_cat] = style_counts.get(style_cat, 0) + 1
-
-        counts = [style_counts.get(cat, 0) for cat in style_categories]
-        percentages = [(count / total_samples) * 100 for count in counts]
-
-        offset = width * (i - 1)
-        ax.bar(
-            [xi + offset for xi in x],
-            percentages,
-            width,
-            label=f"{split_name.capitalize()} (n={total_samples})",
-            color=split_colors[split_name],
-        )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        [cat.capitalize() for cat in style_categories], rotation=45, ha="right"
-    )
-    ax.set_xlabel("Style Category")
-    ax.set_ylabel("Percentage (%)")
-    ax.set_title("Style Distribution", fontsize=14, fontweight="bold")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_dir / "balance_style.png", dpi=150)
-    plt.close()
 
 
 def _plot_memory_distribution(

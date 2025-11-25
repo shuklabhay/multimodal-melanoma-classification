@@ -4,24 +4,23 @@ Constraints:
 - Do NOT use disease names, synonyms, biopsy/diagnosis words, or medical codes.
 - Include the selected paramaters in your paragraph.
 
-Patient metadata (may include age, sex, site): {meta_json}
+Patient metadata (may include age, sex, site): {meta_json}.
 
-Parameters:
-
-- Clarity tone: {clarity_level}
-- Writing style: {style_token}
-- Memory vividness: {vividness_level}
-- Symptom pools to emphasize: {symptom_pools}
-- Social context snippets: {social_context_snippets}
-- Temporal quantifiers: {temporal_quantifiers}
-- Unrelated info: {unrelated_detail}
+Narrative Parameters:
+- Writing Style: {style_token}
+- Memory Vividness: {vividness_level}
+- Symptom Focus: {symptom_pools}
+- Temporal Quantifiers: {temporal_quantifiers}
+- Structure: {structure}
 
 Instructions:
-
-- Match the overall prose clarity to {clarity_level}, letting it drive how precise or hazy the details feel.
-- Describe how the moment unfolded, weaving in {social_context_snippets} to show the setting or people around you.
-- Anchor when it happened by using phrases from {temporal_quantifiers}.
-- Highlight sensations or observations drawn from {symptom_pools}, linking them directly to the experience.
-- Mention the anatomical site only if metadata provides it; keep everything coherent, natural, and in first person within 20–300 words.
-- Return your response wrapped in <narrative></narrative> XML tags with nothing else.
-
+1. Adopt a first-person perspective consistent with the specified Writing Style.
+2. Reflect the Memory Vividness in the level of detail provided.
+3. Anchor the timeline of events using the provided Temporal Quantifiers.
+4. Describe the sensations or observations listed in Symptom Focus. If none are listed, describe the lesion as asymptomatic.
+5. Only talk about anatomical sites if it's provided in metadata. 
+6. Style should affect your description of location: For less formal styles use more relaxed informal names, for more formal styles use the whole term, etc.
+7. Follow the structural directive specified in the Structure parameter as applicable.
+8. Match the overall prose clarity to {clarity_level}, letting it drive how precise or hazy the details feel.
+9. Return your response wrapped in <narrative></narrative> XML tags with nothing else. 
+10. Keep word count between 20-300 words.
