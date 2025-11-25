@@ -8,7 +8,7 @@ Patient metadata (may include age, sex, site): {meta_json}.
 
 Narrative Parameters:
 - Writing Style: {style_token}
-- Memory Vividness: {vividness_level}
+- Memory Vividness: {memory}
 - Symptom Focus: {symptom_pools}
 - Temporal Quantifiers: {temporal_quantifiers}
 - Structure: {structure}
@@ -21,6 +21,6 @@ Instructions:
 5. Only talk about anatomical sites if it's provided in metadata. 
 6. Style should affect your description of location: For less formal styles use more relaxed informal names, for more formal styles use the whole term, etc.
 7. Follow the structural directive specified in the Structure parameter as applicable.
-8. Match the overall prose clarity to {clarity_level}, letting it drive how precise or hazy the details feel.
+8. Match the overall prose clarity to {memory}, letting it drive how precise or hazy the details feel.
 9. Return your response wrapped in <narrative></narrative> XML tags with nothing else. 
 10. Keep word count between 20-300 words.
