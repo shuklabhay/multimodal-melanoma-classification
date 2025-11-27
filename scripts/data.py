@@ -159,6 +159,7 @@ def create_combined_manifests() -> None:
                     "sex": isic_item["sex"],
                     "anatom_site_general": isic_item["anatom_site_general"],
                     "label": isic_item["label"],
+                    "source": "isic",
                 }
                 combined_items.append(combined_item)
 
