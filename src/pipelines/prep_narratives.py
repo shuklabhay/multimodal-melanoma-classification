@@ -203,7 +203,6 @@ def create_local_narrative_manifests() -> None:
     narrative_options = load_narrative_options(options_dir)
 
     rng = random.Random(42)
-
     manifests_dir = Path("assets/manifests")
     manifests_dir.mkdir(parents=True, exist_ok=True)
 
