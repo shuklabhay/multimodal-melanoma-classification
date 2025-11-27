@@ -43,10 +43,6 @@ def create_tf_dataset(
         for item in manifest:
             yield (item["image_path"], item["text_path"], item["label"])
 
-    dataset = tf.data.Dataset.from_generator(
-        generator, output_types=(tf.string, tf.string, tf.int32)
-    )
-
     def load_and_process(image_path, text_path, label):
         """Loads and processes image and text data.
 
@@ -68,6 +64,9 @@ def create_tf_dataset(
         text = tf.strings.strip(text)
         return (image, text), label
 
+    dataset = tf.data.Dataset.from_generator(
+        generator, output_types=(tf.string, tf.string, tf.int32)
+    )
     dataset = dataset.map(load_and_process, num_parallel_calls=tf.data.AUTOTUNE)
 
     dataset = dataset.batch(batch_size)
