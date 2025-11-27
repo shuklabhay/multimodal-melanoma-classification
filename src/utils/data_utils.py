@@ -57,7 +57,7 @@ def create_tf_dataset(
         image = tf.io.read_file(image_path)
         image = tf.image.decode_image(image, channels=3)
 
-        image = tf.image.resize(image, image_size)
+        image = tf.image.resize_with_pad(image, image_size[0], image_size[1])
         image = tf.cast(image, tf.float32) / 255.0
 
         text = tf.io.read_file(text_path)
