@@ -31,8 +31,6 @@ def create_tf_dataset(
         manifest_path: Path to the combined manifest JSONL file.
         batch_size: Batch size for the dataset.
         image_size: Target image size (height, width) for resizing.
-        shuffle: Whether to shuffle the dataset.
-        shuffle_buffer_size: Size of shuffle buffer.
         prefetch_size: Number of batches to prefetch.
 
     Returns:
