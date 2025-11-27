@@ -155,6 +155,9 @@ def create_combined_manifests() -> None:
                 combined_item = {
                     "image_path": isic_item["image_path"],
                     "text_path": narrative_item["text_path"],
+                    "age_approx": isic_item["age_approx"],
+                    "sex": isic_item["sex"],
+                    "anatom_site_general": isic_item["anatom_site_general"],
                     "label": isic_item["label"],
                 }
                 combined_items.append(combined_item)
