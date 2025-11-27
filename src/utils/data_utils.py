@@ -88,7 +88,6 @@ def create_tf_dataset(
 
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(buffer_size=prefetch_size)
-
     return dataset
 
 
