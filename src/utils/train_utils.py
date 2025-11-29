@@ -232,7 +232,7 @@ def train(
         seed=seed,
     )
 
-    best_val_accuracy = 0.0
+    best_val_balanced_acc = 0.0
     best_epoch = 0
     epochs_without_improvement = 0
 
@@ -245,20 +245,31 @@ def train(
             {
                 "train/loss": train_metrics["loss"],
                 "train/accuracy": train_metrics["accuracy"],
+                "train/balanced_accuracy": train_metrics["balanced_accuracy"],
+                "train/sensitivity": train_metrics["sensitivity_mean"],
+                "train/specificity": train_metrics["specificity_mean"],
+                "train/auroc": train_metrics["auroc"],
+                "train/ece": train_metrics["ece"],
+                "train/brier": train_metrics["brier"],
                 "val/loss": val_metrics["loss"],
                 "val/accuracy": val_metrics["accuracy"],
-                "epoch": epoch,
+                "val/balanced_accuracy": val_metrics["balanced_accuracy"],
+                "val/sensitivity": val_metrics["sensitivity_mean"],
+                "val/specificity": val_metrics["specificity_mean"],
+                "val/auroc": val_metrics["auroc"],
+                "val/ece": val_metrics["ece"],
+                "val/brier": val_metrics["brier"],
             }
         )
 
-        if val_metrics["accuracy"] > best_val_accuracy:
-            best_val_accuracy = val_metrics["accuracy"]
+        if val_metrics["balanced_accuracy"] > best_val_balanced_acc:
+            best_val_balanced_acc = val_metrics["balanced_accuracy"]
             best_epoch = epoch
             epochs_without_improvement = 0
             upload_best_model(
                 model,
                 epoch,
-                best_val_accuracy,
+                best_val_balanced_acc,
                 learning_rate,
                 batch_size,
                 num_classes,
@@ -276,11 +287,11 @@ def train(
     print("Running test evaluation...")
     test_metrics = eval_epoch(model, test_ds)
 
-    log_final_metrics(best_val_accuracy, best_epoch, test_metrics)
+    log_final_metrics(best_val_balanced_acc, best_epoch, test_metrics)
 
     print(
-        f"Training complete. Best val accuracy: {best_val_accuracy:.4f} (epoch {best_epoch})"
+        f"Training complete. Best val balanced accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})"
     )
-    print(f"Test accuracy: {test_metrics['accuracy']:.4f}")
+    print(f"Test balanced accuracy: {test_metrics['balanced_accuracy']:.4f}")
 
     return model
