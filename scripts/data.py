@@ -1,5 +1,4 @@
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +6,8 @@ from pathlib import Path
 from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.utils.data_utils import _use_buffer
 
 app = Typer()
 
@@ -170,41 +171,6 @@ def create_combined_manifests() -> None:
         print(f"  Created {combined_path.name} with {len(combined_items)} items")
 
     print("\n✓ Combined manifests created successfully!")
-
-
-def _use_buffer(file_map: dict[str, str]) -> None:
-    """Downloads buffer from Modal, moves mapped files to destinations, deletes rest.
-
-    Args:
-        file_map: Dict mapping buffer filenames to local destination paths.
-    """
-
-    print("\nDownloading outputs from Modal Volume...")
-    subprocess.run(
-        ["uv", "run", "modal", "volume", "get", "--force", "data", "buffer", "."],
-        check=True,
-    )
-
-    buffer_dir = Path("buffer")
-    if not buffer_dir.exists():
-        return
-
-    for file in buffer_dir.iterdir():
-        if file.name in file_map:
-            dest_path = Path(file_map[file.name])
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            file.rename(dest_path)
-            print(f"  Moved {file.name} to {dest_path}")
-        else:
-            file.unlink()
-            print(f"  Deleted {file.name}")
-
-    shutil.rmtree(buffer_dir)
-    subprocess.run(
-        ["uv", "run", "modal", "volume", "rm", "data", "buffer", "-r"],
-        check=True,
-    )
-    print("✓ Modal buffer cleared")
 
 
 @app.callback(invoke_without_command=True)

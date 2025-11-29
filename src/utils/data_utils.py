@@ -1,4 +1,7 @@
 import json
+import shutil
+import subprocess
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -76,7 +79,10 @@ def create_tf_dataset(
             image = resize_shortest_edge(image, resize_target)
             image = tf.image.resize_with_crop_or_pad(image, target_h, target_w)
 
-        image = tf.math.divide(tf.cast(image, tf.float32), 255.0)
+        image = tf.cast(image, tf.float32) / 255.0
+        mean = tf.constant([0.485, 0.456, 0.406])
+        std = tf.constant([0.229, 0.224, 0.225])
+        image = (image - mean) / std
 
         text = tf.io.read_file(text_path)
         text = tf.strings.strip(text)
@@ -93,6 +99,7 @@ def create_tf_dataset(
     dataset = dataset.map(load_and_process, num_parallel_calls=tf.data.AUTOTUNE)
 
     dataset = dataset.batch(batch_size)
+
     dataset = dataset.prefetch(buffer_size=prefetch_size)
     return dataset
 
@@ -138,268 +145,36 @@ def get_dataloaders(
     return train_ds, val_ds, test_ds
 
 
-class DataloaderVisualizer:
-    """Tkinter app to visualize dataloader outputs."""
-
-    def __init__(
-        self,
-        batches: dict[str, list[tuple[np.ndarray, list[str], np.ndarray]]],
-        batch_size: int = 8,
-    ):
-        """Initialize the visualizer.
-
-        Args:
-            batches: Dict mapping split name to list of (images, texts, labels) tuples.
-                     images: np.ndarray of shape (batch, H, W, 3) with values 0-1
-                     texts: list of text strings
-                     labels: np.ndarray of shape (batch,) with label indices
-            batch_size: Number of images per batch.
-        """
-        import tkinter as tk
-
-        self.tk = tk
-        self.batches = batches
-        self.batch_size = batch_size
-        self.current_split = "train"
-        self.current_batch_idx = 0
-
-        self.root = tk.Tk()
-        self.root.title("Dataloader Visualizer")
-        self.root.configure(bg="#1e1e1e")
-
-        self._setup_ui()
-        self._update_display()
-
-    def _setup_ui(self) -> None:
-        """Set up the UI components."""
-        from tkinter import ttk
-
-        self.ttk = ttk
-        tk = self.tk
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TButton", padding=6)
-        style.configure("TLabel", background="#1e1e1e", foreground="white")
-        style.configure("TFrame", background="#1e1e1e")
-
-        control_frame = ttk.Frame(self.root)
-        control_frame.pack(pady=10, fill=tk.X)
-
-        ttk.Label(control_frame, text="Split:").pack(side=tk.LEFT, padx=5)
-        self.split_var = tk.StringVar(value="train")
-        split_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.split_var,
-            values=["train", "val", "test"],
-            state="readonly",
-            width=10,
-        )
-        split_combo.pack(side=tk.LEFT, padx=5)
-        split_combo.bind("<<ComboboxSelected>>", self._on_split_change)
-
-        ttk.Button(control_frame, text="<< Prev", command=self._prev_batch).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(control_frame, text="Next >>", command=self._next_batch).pack(
-            side=tk.LEFT, padx=5
-        )
-
-        self.batch_label = ttk.Label(control_frame, text="Batch 1/1")
-        self.batch_label.pack(side=tk.LEFT, padx=20)
-
-        canvas_frame = ttk.Frame(self.root)
-        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        self.canvas = tk.Canvas(canvas_frame, bg="#2d2d2d", highlightthickness=0)
-        scrollbar_y = ttk.Scrollbar(
-            canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview
-        )
-        scrollbar_x = ttk.Scrollbar(
-            canvas_frame, orient=tk.HORIZONTAL, command=self.canvas.xview
-        )
-
-        self.canvas.configure(
-            yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set
-        )
-
-        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
-        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.inner_frame = ttk.Frame(self.canvas)
-        self.canvas_window = self.canvas.create_window(
-            (0, 0), window=self.inner_frame, anchor="nw"
-        )
-
-        self.inner_frame.bind("<Configure>", self._on_frame_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-
-        self.root.bind("<Left>", lambda e: self._prev_batch())
-        self.root.bind("<Right>", lambda e: self._next_batch())
-
-    def _on_frame_configure(self, event) -> None:
-        """Update scroll region when inner frame changes."""
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-    def _on_canvas_configure(self, event) -> None:
-        """Update inner frame width when canvas resizes."""
-        self.canvas.itemconfig(self.canvas_window, width=event.width)
-
-    def _on_split_change(self, event) -> None:
-        """Handle split selection change."""
-        self.current_split = self.split_var.get()
-        self.current_batch_idx = 0
-        self._update_display()
-
-    def _prev_batch(self) -> None:
-        """Go to previous batch."""
-        if self.current_batch_idx > 0:
-            self.current_batch_idx -= 1
-            self._update_display()
-
-    def _next_batch(self) -> None:
-        """Go to next batch."""
-        max_idx = len(self.batches.get(self.current_split, [])) - 1
-        if self.current_batch_idx < max_idx:
-            self.current_batch_idx += 1
-            self._update_display()
-
-    def _update_display(self) -> None:
-        """Update the display with current batch."""
-        import io
-
-        from PIL import Image
-
-        from src.pipelines.label_config import LABEL_CONFIG
-
-        tk = self.tk
-        ttk = self.ttk
-
-        for widget in self.inner_frame.winfo_children():
-            widget.destroy()
-
-        split_batches = self.batches.get(self.current_split, [])
-        total_batches = len(split_batches)
-
-        self.batch_label.configure(
-            text=f"Batch {self.current_batch_idx + 1}/{total_batches}"
-        )
-
-        if not split_batches:
-            ttk.Label(
-                self.inner_frame, text="No batches available", font=("Arial", 14)
-            ).pack(pady=50)
-            return
-
-        images, texts, labels = split_batches[self.current_batch_idx]
-        batch_size = len(images)
-
-        cols = min(4, batch_size)
-        self.photo_refs = []
-
-        for idx in range(batch_size):
-            row = idx // cols
-            col = idx % cols
-
-            cell_frame = ttk.Frame(self.inner_frame)
-            cell_frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-
-            img_array = images[idx]
-            img_array = (img_array * 255).astype(np.uint8)
-            pil_img = Image.fromarray(img_array)
-
-            display_size = 200
-            pil_img = pil_img.resize(
-                (display_size, display_size), Image.Resampling.LANCZOS
-            )
-
-            buffer = io.BytesIO()
-            pil_img.save(buffer, format="PNG")
-            photo = tk.PhotoImage(data=buffer.getvalue())
-            self.photo_refs.append(photo)
-
-            img_label = ttk.Label(cell_frame, image=photo)
-            img_label.pack()
-
-            label_idx = int(labels[idx])
-            label_name = LABEL_CONFIG.get(label_idx, {}).get(
-                "name", f"Unknown ({label_idx})"
-            )
-
-            info_label = ttk.Label(
-                cell_frame,
-                text=f"Label: {label_idx} ({label_name})",
-                font=("Arial", 10, "bold"),
-                wraplength=200,
-            )
-            info_label.pack(pady=(5, 0))
-
-            text_content = texts[idx] if idx < len(texts) else ""
-
-            text_label = ttk.Label(
-                cell_frame,
-                text=text_content,
-                font=("Arial", 8),
-                wraplength=200,
-                foreground="#aaaaaa",
-            )
-            text_label.pack(pady=(2, 0))
-
-        for col in range(cols):
-            self.inner_frame.columnconfigure(col, weight=1)
-
-    def run(self) -> None:
-        """Run the visualizer app."""
-        self.root.geometry("1200x900")
-        self.root.mainloop()
-
-
-def fetch_dataloader_batches(
-    num_batches: int = 5,
-    batch_size: int = 8,
-    image_size: tuple[int, int] = (224, 224),
-) -> dict[str, list[tuple[np.ndarray, list[str], np.ndarray]]]:
-    """Fetch batches from all dataloaders and convert to numpy arrays.
+def _use_buffer(file_map: dict[str, str]) -> None:
+    """Downloads buffer from Modal, moves mapped files to destinations, deletes rest.
 
     Args:
-        num_batches: Number of batches to fetch per split.
-        batch_size: Batch size for dataloaders.
-        image_size: Image size for dataloaders.
-
-    Returns:
-        Dict mapping split name to list of (images, texts, labels) tuples.
+        file_map: Dict mapping buffer filenames to local destination paths.
     """
-    train_ds, val_ds, test_ds = get_dataloaders(
-        batch_size=batch_size, image_size=image_size
+
+    print("\nDownloading outputs from Modal Volume...")
+    subprocess.run(
+        ["uv", "run", "modal", "volume", "get", "--force", "data", "buffer", "."],
+        check=True,
     )
 
-    result: dict[str, list[tuple[np.ndarray, list[str], np.ndarray]]] = {
-        "train": [],
-        "val": [],
-        "test": [],
-    }
+    buffer_dir = Path("buffer")
+    if not buffer_dir.exists():
+        return
 
-    datasets = {"train": train_ds, "val": val_ds, "test": test_ds}
+    for file in buffer_dir.iterdir():
+        if file.name in file_map:
+            dest_path = Path(file_map[file.name])
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            file.rename(dest_path)
+            print(f"  Moved {file.name} to {dest_path}")
+        else:
+            file.unlink()
+            print(f"  Deleted {file.name}")
 
-    for split_name, dataset in datasets.items():
-        for i, ((images, texts), labels) in enumerate(dataset.take(num_batches)):
-            images_np = images.numpy()
-            texts_list = [t.numpy().decode("utf-8") for t in texts]
-            labels_np = labels.numpy()
-            result[split_name].append((images_np, texts_list, labels_np))
-
-    return result
-
-
-def run_visualizer(
-    batches: dict[str, list[tuple[np.ndarray, list[str], np.ndarray]]],
-    batch_size: int = 4,
-) -> None:
-    """Run the dataloader visualizer app.
-
-    Args:
-        batches: Pre-fetched batches from fetch_dataloader_batches.
-        batch_size: Batch size used.
-    """
-    app = DataloaderVisualizer(batches, batch_size=batch_size)
-    app.run()
+    shutil.rmtree(buffer_dir)
+    subprocess.run(
+        ["uv", "run", "modal", "volume", "rm", "data", "buffer", "-r"],
+        check=True,
+    )
+    print("✓ Modal buffer cleared")
