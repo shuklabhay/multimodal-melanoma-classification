@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import wandb
 from flax import nnx, traverse_util
-from safetensors.flax import save_file
+from safetensors.flax import load_file, save_file
 
 from src.pipelines.label_config import LABEL_CONFIG
 
@@ -215,7 +215,7 @@ def compute_metrics(
     return metrics
 
 
-def upload_best_model(
+def upload_best_to_wandb(
     model: nnx.Module,
     epoch: int,
     val_accuracy: float,
@@ -256,6 +256,41 @@ def upload_best_model(
     )
     artifact.add_file(local_path)
     wandb.log_artifact(artifact)
+
+
+def load_best_from_wandb(model: nnx.Module) -> None:
+    """Load best model parameters from WandB artifact.
+
+    Args:
+        model: The model to load parameters into (modified in place).
+    """
+    artifact = wandb.use_artifact("best-model:latest")
+    print(f"Loading {artifact.name} (version {artifact.version})")
+    artifact_dir = artifact.download()
+    safetensor_path = f"{artifact_dir}/best_model.safetensors"
+    flat_params = load_file(safetensor_path)
+
+    _, params, _ = nnx.split(model, nnx.Param, ...)
+    params_dict = nnx.to_pure_dict(params)
+    flat_current = cast(
+        dict[str, jax.Array], traverse_util.flatten_dict(params_dict, sep=".")
+    )
+
+    for key in list(flat_current.keys()):
+        if key in flat_params:
+            flat_current[key] = flat_params[key]
+
+    nested_updated = traverse_util.unflatten_dict(flat_current, sep=".")
+
+    def update_recursive(state: nnx.State, updates: dict) -> None:
+        for k, v in updates.items():
+            if isinstance(v, dict):
+                update_recursive(getattr(state, k), v)
+            else:
+                setattr(state, k, nnx.Param(v))
+
+    update_recursive(params, nested_updated)
+    nnx.update(model, params)
 
 
 def log_confusion_matrix(

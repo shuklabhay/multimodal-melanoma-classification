@@ -16,7 +16,12 @@ load_dotenv()
 
 from src.models.model_builder import DynamicModel, ModelConfig, build_model
 from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
-from src.utils.eval_utils import compute_metrics, log_final_metrics, upload_best_model
+from src.utils.eval_utils import (
+    compute_metrics,
+    load_best_from_wandb,
+    log_final_metrics,
+    upload_best_to_wandb,
+)
 
 DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
 
@@ -289,7 +294,11 @@ def train(
             best_val_balanced_acc = val_metrics["balanced_accuracy"]
             best_epoch = epoch
             epochs_without_improvement = 0
-            upload_best_model(
+            print(
+                f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f} "
+                f"(prev best epoch {best_epoch})"
+            )
+            upload_best_to_wandb(
                 model,
                 epoch,
                 best_val_balanced_acc,
@@ -300,9 +309,18 @@ def train(
             )
         else:
             epochs_without_improvement += 1
+            print(
+                f"Epoch {epoch}: No improvement ({epochs_without_improvement}/{early_stopping_patience})"
+            )
             if epochs_without_improvement >= early_stopping_patience:
                 print(f"Early stopping at epoch {epoch}")
                 break
+
+    print("Unloading train/val datasets...")
+    del train_ds, val_ds
+
+    print("Loading best model checkpoint...")
+    load_best_from_wandb(model)
 
     print("Loading test dataset...")
     test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
