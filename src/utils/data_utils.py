@@ -53,47 +53,62 @@ def create_tf_dataset(
         A tf.data.Dataset yielding ((image, text), label) tuples.
     """
     manifest = load_manifest(manifest_path)
+    target_h, target_w = image_size
 
-    def generator():
-        """Generator function to yield (image_path, text_path, label)."""
-        for item in manifest:
-            yield (item["image_path"], item["text_path"], item["label"])
+    print(f"Loading {len(manifest)} images into RAM...")
+    all_images = []
+    all_texts = []
+    all_labels = []
 
-    def load_and_process(image_path, text_path, label):
-        """Loads and processes image and text data."""
-        image = tf.io.read_file(image_path)
+    for i, item in enumerate(manifest):
+        image = tf.io.read_file(item["image_path"])
         image = tf.image.decode_image(image, channels=3, expand_animations=False)
         image = cast(tf.Tensor, image)
 
-        target_h, target_w = image_size
         if is_training:
             resize_target = max(target_h, target_w) + 32
-            image = resize_shortest_edge(image, resize_target)
-            image = tf.image.random_crop(image, [target_h, target_w, 3])
-
         else:
             resize_target = max(target_h, target_w)
-            image = resize_shortest_edge(image, resize_target)
-            image = tf.image.resize_with_crop_or_pad(image, target_h, target_w)
+        image = resize_shortest_edge(image, resize_target)
 
+        if not is_training:
+            image = tf.image.resize_with_crop_or_pad(image, target_h, target_w)
+            image = tf.cast(image, tf.float32) / 255.0
+            mean = tf.constant([0.485, 0.456, 0.406])
+            std = tf.constant([0.229, 0.224, 0.225])
+            image = (image - mean) / std
+
+        text = tf.io.read_file(item["text_path"])
+        text = tf.strings.strip(text)
+
+        all_images.append(image.numpy())  # type: ignore[reportOptionalCall]
+        all_texts.append(text.numpy())
+        all_labels.append(item["label"])
+
+        if (i + 1) % 5000 == 0:
+            print(f"  Loaded {i + 1}/{len(manifest)} images")
+
+    print(f"✓ All {len(manifest)} images loaded into RAM")
+
+    def train_augment(image, text, label):
+        """Apply random crop and normalization for training."""
+        image = tf.image.random_crop(image, [target_h, target_w, 3])
         image = tf.cast(image, tf.float32) / 255.0
         mean = tf.constant([0.485, 0.456, 0.406])
         std = tf.constant([0.229, 0.224, 0.225])
         image = (image - mean) / std
-
-        text = tf.io.read_file(text_path)
-        text = tf.strings.strip(text)
         return (image, text), label
 
-    dataset = tf.data.Dataset.from_generator(
-        generator,
-        output_signature=(
-            tf.TensorSpec(shape=(), dtype=tf.string),  # type: ignore[call-arg]
-            tf.TensorSpec(shape=(), dtype=tf.string),  # type: ignore[call-arg]
-            tf.TensorSpec(shape=(), dtype=tf.int32),  # type: ignore[call-arg]
-        ),
-    )
-    dataset = dataset.map(load_and_process, num_parallel_calls=tf.data.AUTOTUNE)
+    def eval_passthrough(image, text, label):
+        """Just restructure the tuple for eval (already processed)."""
+        return (image, text), label
+
+    dataset = tf.data.Dataset.from_tensor_slices((all_images, all_texts, all_labels))
+
+    if is_training:
+        dataset = dataset.map(train_augment, num_parallel_calls=tf.data.AUTOTUNE)
+    else:
+        dataset = dataset.map(eval_passthrough, num_parallel_calls=tf.data.AUTOTUNE)
 
     dataset = dataset.batch(batch_size)
     num_batches = (len(manifest) + batch_size - 1) // batch_size

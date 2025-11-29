@@ -56,8 +56,8 @@ def narratives_entrypoint() -> None:
 
 @app.function(
     gpu="L4",
-    cpu=8,
-    memory=8192,
+    cpu=4,
+    memory=16384,
     timeout=86400,
     secrets=[
         modal.Secret.from_dict(
