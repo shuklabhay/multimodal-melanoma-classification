@@ -6,6 +6,8 @@ import wandb
 from flax import nnx, traverse_util
 from safetensors.flax import save_file
 
+from src.pipelines.label_config import LABEL_CONFIG
+
 
 def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
     """Calculate accuracy from logits and labels.
@@ -142,7 +144,9 @@ def calculate_ece(
     total_samples = len(labels)
 
     for i in range(num_bins):
-        in_bin = (confidences > bin_boundaries[i]) & (confidences <= bin_boundaries[i + 1])
+        in_bin = (confidences > bin_boundaries[i]) & (
+            confidences <= bin_boundaries[i + 1]
+        )
         bin_size = jnp.sum(in_bin)
         if bin_size > 0:
             bin_accuracy = jnp.sum(accuracies * in_bin) / bin_size
@@ -254,10 +258,36 @@ def upload_best_model(
     wandb.log_artifact(artifact)
 
 
+def log_confusion_matrix(
+    logits: jnp.ndarray,
+    labels: jnp.ndarray,
+    title: str = "Confusion Matrix",
+) -> None:
+    """Log confusion matrix to WandB.
+
+    Args:
+        logits: Model output logits of shape (batch_size, num_classes).
+        labels: Integer labels of shape (batch_size,).
+        title: Title for the confusion matrix plot.
+    """
+
+    class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
+    predictions = jnp.argmax(logits, axis=-1)
+    cm = wandb.plot.confusion_matrix(
+        preds=predictions.tolist(),
+        y_true=labels.tolist(),
+        class_names=class_names,
+        title=title,
+    )
+    wandb.log({title.lower().replace(" ", "_"): cm})
+
+
 def log_final_metrics(
     best_val_balanced_acc: float,
     best_epoch: int,
     test_metrics: dict[str, float],
+    test_logits: jnp.ndarray,
+    test_labels: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
 
@@ -265,6 +295,8 @@ def log_final_metrics(
         best_val_balanced_acc: The best validation balanced accuracy achieved.
         best_epoch: The epoch at which best validation balanced accuracy was achieved.
         test_metrics: Dictionary containing test set metrics.
+        test_logits: Test set logits for confusion matrix.
+        test_labels: Test set labels for confusion matrix.
     """
     wandb.log(
         {
@@ -278,6 +310,9 @@ def log_final_metrics(
             "test/brier": test_metrics["brier"],
         }
     )
+
+    log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
+
     wandb.summary["best_val_balanced_accuracy"] = best_val_balanced_acc
     wandb.summary["best_epoch"] = best_epoch
     wandb.summary["test_loss"] = test_metrics["loss"]

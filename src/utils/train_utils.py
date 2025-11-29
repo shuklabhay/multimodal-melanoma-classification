@@ -66,7 +66,9 @@ def train_step(
 
     def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
         logits = model(images, train=True)
-        per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels)
+        per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
+            logits, labels
+        )
         sample_weights = class_weights[labels]
         loss = jnp.mean(per_sample_loss * sample_weights)
         return loss, logits
@@ -132,7 +134,9 @@ def train_epoch(
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
-        loss, logits = train_step(model, optimizer, images_jax, labels_jax, class_weights)
+        loss, logits = train_step(
+            model, optimizer, images_jax, labels_jax, class_weights
+        )
         all_logits.append(logits)
         all_labels.append(labels_jax)
         all_losses.append(float(loss))
@@ -147,15 +151,17 @@ def train_epoch(
 def eval_epoch(
     model: nnx.Module,
     ds: tf.data.Dataset,
-) -> dict[str, float]:
+    return_predictions: bool = False,
+) -> dict[str, float] | tuple[dict[str, float], jnp.ndarray, jnp.ndarray]:
     """Evaluates the model on a dataset.
 
     Args:
         model: The model to evaluate.
         ds: The dataset to evaluate on.
+        return_predictions: If True, also return logits and labels.
 
     Returns:
-        A dictionary containing evaluation metrics (accuracy, loss).
+        A dictionary containing evaluation metrics, or tuple of (metrics, logits, labels).
     """
     all_logits = []
     all_labels = []
@@ -173,7 +179,11 @@ def eval_epoch(
 
     all_logits = jnp.concatenate(all_logits)
     all_labels = jnp.concatenate(all_labels)
-    return compute_metrics(all_logits, all_labels, all_losses)
+    metrics = compute_metrics(all_logits, all_labels, all_losses)
+
+    if return_predictions:
+        return metrics, all_logits, all_labels
+    return metrics
 
 
 def train(
@@ -252,7 +262,7 @@ def train(
     print("Starting training...")
     for epoch in range(1, num_epochs + 1):
         train_metrics = train_epoch(model, optimizer, train_ds, epoch, class_weights)
-        val_metrics = eval_epoch(model, val_ds)
+        val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
         wandb.log(
             {
@@ -298,9 +308,14 @@ def train(
     test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
 
     print("Running test evaluation...")
-    test_metrics = eval_epoch(model, test_ds)
+    test_result = eval_epoch(model, test_ds, return_predictions=True)
+    test_metrics, test_logits, test_labels = cast(
+        tuple[dict[str, float], jnp.ndarray, jnp.ndarray], test_result
+    )
 
-    log_final_metrics(best_val_balanced_acc, best_epoch, test_metrics)
+    log_final_metrics(
+        best_val_balanced_acc, best_epoch, test_metrics, test_logits, test_labels
+    )
 
     print(
         f"Training complete. Best val balanced accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})"
