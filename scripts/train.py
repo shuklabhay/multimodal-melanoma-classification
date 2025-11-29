@@ -1,13 +1,52 @@
+import json
 import subprocess
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 app = Typer()
+
+
+def compute_class_weights(
+    manifest_path: str = "assets/manifests/split_train.jsonl",
+    output_path: str = "assets/class_weights.npy",
+) -> None:
+    """Compute class weights from training manifest and save to file.
+
+    Args:
+        manifest_path: Path to training manifest JSONL.
+        output_path: Path to save class weights as .npy file.
+    """
+    labels = []
+    with open(manifest_path) as f:
+        for line in f:
+            item = json.loads(line)
+            labels.append(item["label"])
+
+    counts = Counter(labels)
+    num_classes = len(counts)
+    total = sum(counts.values())
+
+    print("\n=== Class Distribution ===")
+    for c in range(num_classes):
+        freq = counts[c] / total
+        print(f"  Class {c}: {counts[c]:>5} samples ({freq:.1%})")
+
+    weights = np.array([total / (num_classes * counts[c]) for c in range(num_classes)])
+    weights = weights / weights.sum() * num_classes
+
+    print("\n=== Class Weights ===")
+    for c in range(num_classes):
+        print(f"  Class {c}: {weights[c]:.4f}")
+
+    np.save(output_path, weights)
+    print(f"\n✓ Saved class weights to {output_path}")
 
 
 def list_configs() -> list[Path]:
@@ -84,15 +123,18 @@ def main(ctx: Context) -> None:
 
     print("\n=== Training Utilities ===")
     print("  1. Bundle data")
-    print("  2. Train model")
-    print("  3. Exit")
+    print("  2. Compute class weights")
+    print("  3. Train model")
+    print("  4. Exit")
     choice = input("\nEnter your choice: ").strip()
 
     if choice == "1":
         bundle()
     elif choice == "2":
-        train()
+        compute_class_weights()
     elif choice == "3":
+        train()
+    elif choice == "4":
         print("Exiting...")
         return
     else:
