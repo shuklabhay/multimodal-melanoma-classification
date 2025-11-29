@@ -68,8 +68,26 @@ def narratives_entrypoint() -> None:
                 "TF_GPU_ALLOCATOR": "cuda_malloc_async",
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
             }
-        )
+        ),
+        modal.Secret.from_dotenv(),
     ],
 )
-def train_x():
-    pass
+def train_model(
+    num_epochs: int = 15,
+    batch_size: int = 16,
+    learning_rate: float = 1e-4,
+    num_classes: int = 8,
+    seed: int = 0,
+    early_stopping_patience: int = 10,
+):
+    """Train the lesion classification model on Modal with WandB tracking."""
+    from src.utils.train_utils import train
+
+    train(
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        num_classes=num_classes,
+        seed=seed,
+        early_stopping_patience=early_stopping_patience,
+    )

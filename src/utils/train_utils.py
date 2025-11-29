@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterable
 from typing import cast
 
@@ -6,11 +7,16 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import tensorflow as tf
+import wandb
+from dotenv import load_dotenv
 from flax import nnx
 from tqdm import tqdm
 
+load_dotenv()
+
 from src.models.backbones import ResNet50Classifier
 from src.utils.data_utils import get_dataloaders
+from src.utils.eval_utils import compute_metrics, log_final_metrics, upload_best_model
 
 DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
 
@@ -40,27 +46,27 @@ def train_step(
     optimizer: nnx.Optimizer,
     images: jax.Array,
     labels: jax.Array,
-) -> jax.Array:
-    """Performs a single training step, computing loss, gradients, and updating model parameters.
+) -> tuple[jax.Array, jax.Array]:
+    """Performs a single training step.
 
     Args:
         model: The ResNet50Classifier model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
-        images: A batch of input images.
-        labels: A batch of corresponding integer labels.
+        images: Batch of input images.
+        labels: Batch of integer labels.
 
     Returns:
-        The scalar mean cross-entropy loss for the batch.
+        A tuple containing the loss and logits for the batch.
     """
 
-    def loss_fn(model: ResNet50Classifier) -> jax.Array:
+    def loss_fn(model: ResNet50Classifier) -> tuple[jax.Array, jax.Array]:
         logits = model(images, train=True)
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels)
-        return jnp.mean(loss)
+        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits, labels))
+        return loss, logits
 
-    loss, grads = nnx.value_and_grad(loss_fn)(model)
+    (loss, logits), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model)
     optimizer.update(model, grads)
-    return loss
+    return loss, logits
 
 
 @nnx.jit
@@ -69,21 +75,19 @@ def eval_step(
     images: jax.Array,
     labels: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
-    """Computes the loss and accuracy for a batch of data without updating model parameters.
+    """Performs a single evaluation step.
 
     Args:
-        model: The ResNet50Classifier model for evaluation.
-        images: A batch of input images.
-        labels: A batch of corresponding integer labels.
+        model: The ResNet50Classifier model to evaluate.
+        images: Batch of input images.
+        labels: Batch of integer labels.
 
     Returns:
-        A tuple containing the scalar mean cross-entropy loss and the scalar accuracy for the batch.
+        A tuple containing the loss and logits for the batch.
     """
     logits = model(images, train=False)
     loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits, labels))
-    predictions = jnp.argmax(logits, axis=-1)
-    accuracy = jnp.mean(predictions == labels)
-    return loss, accuracy
+    return loss, logits
 
 
 def train_epoch(
@@ -91,19 +95,21 @@ def train_epoch(
     optimizer: nnx.Optimizer,
     train_ds: tf.data.Dataset,
     epoch: int,
-) -> float:
-    """Iterates through the training dataset for one epoch, performing training steps and logging progress.
+) -> dict[str, float]:
+    """Trains the model for one epoch.
 
     Args:
         model: The ResNet50Classifier model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
-        train_ds: The TensorFlow dataset containing training data.
-        epoch: The current epoch number for logging purposes.
+        train_ds: The training dataset.
+        epoch: The current epoch number (for progress bar display).
 
     Returns:
-        The average loss across all batches in the epoch.
+        A dictionary containing training metrics (accuracy, loss).
     """
-    losses = []
+    all_logits = []
+    all_labels = []
+    all_losses = []
     batches = cast(Iterable[DatasetBatch], train_ds.as_numpy_iterator())
 
     pbar = tqdm(
@@ -116,40 +122,45 @@ def train_epoch(
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
-        loss = train_step(model, optimizer, images_jax, labels_jax)
-        losses.append(float(loss))
+        loss, logits = train_step(model, optimizer, images_jax, labels_jax)
+        all_logits.append(logits)
+        all_labels.append(labels_jax)
+        all_losses.append(float(loss))
+
         pbar.set_postfix(loss=f"{loss:.4f}")
 
-    return sum(losses) / len(losses) if losses else 0.0
+    all_logits = jnp.concatenate(all_logits)
+    all_labels = jnp.concatenate(all_labels)
+    return compute_metrics(all_logits, all_labels, all_losses)
 
 
-def eval_epoch(
-    model: ResNet50Classifier, val_ds: tf.data.Dataset
-) -> tuple[float, float]:
-    """Evaluates the model on a validation dataset, computing average loss and accuracy.
+def eval_epoch(model: ResNet50Classifier, ds: tf.data.Dataset) -> dict[str, float]:
+    """Evaluates the model on a dataset.
 
     Args:
         model: The ResNet50Classifier model to evaluate.
-        val_ds: The TensorFlow dataset containing validation data.
+        ds: The dataset to evaluate on.
 
     Returns:
-        A tuple containing the average loss and average accuracy over the validation dataset.
+        A dictionary containing evaluation metrics (accuracy, loss).
     """
-    losses = []
-    accuracies = []
+    all_logits = []
+    all_labels = []
+    all_losses = []
 
-    batches = cast(Iterable[DatasetBatch], val_ds.as_numpy_iterator())
+    batches = cast(Iterable[DatasetBatch], ds.as_numpy_iterator())
     for (images, _texts), labels in batches:
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
-        loss, accuracy = eval_step(model, images_jax, labels_jax)
-        losses.append(float(loss))
-        accuracies.append(float(accuracy))
+        loss, logits = eval_step(model, images_jax, labels_jax)
+        all_logits.append(logits)
+        all_labels.append(labels_jax)
+        all_losses.append(float(loss))
 
-    avg_loss = sum(losses) / len(losses) if losses else 0.0
-    avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
-    return avg_loss, avg_accuracy
+    all_logits = jnp.concatenate(all_logits)
+    all_labels = jnp.concatenate(all_labels)
+    return compute_metrics(all_logits, all_labels, all_losses)
 
 
 def train(
@@ -161,26 +172,38 @@ def train(
     val_manifest: str = "/root/assets/manifests/split_val.jsonl",
     test_manifest: str = "/root/assets/manifests/split_test.jsonl",
     seed: int = 0,
+    early_stopping_patience: int = 10,
 ) -> ResNet50Classifier:
-    """Executes the full training loop, including data loading, model initialization, and epoch-wise training and evaluation.
+    """Full training loop with WandB tracking and early stopping.
 
     Args:
-        num_epochs: The total number of epochs to train the model.
-        batch_size: The batch size for training and validation data loaders.
-        learning_rate: The learning rate for the optimizer.
-        num_classes: The number of output classes for the classifier.
-        train_manifest: Path to training manifest.
-        val_manifest: Path to validation manifest.
-        test_manifest: Path to test manifest.
-        seed: Random seed for model initialization.
+        num_epochs: Maximum number of epochs to train.
+        batch_size: Number of samples per batch.
+        learning_rate: Learning rate for the Adam optimizer.
+        num_classes: Number of output classes for the classifier.
+        train_manifest: Path to the training data manifest file.
+        val_manifest: Path to the validation data manifest file.
+        test_manifest: Path to the test data manifest file.
+        seed: Random seed for reproducibility.
+        early_stopping_patience: Number of epochs without improvement before stopping.
 
     Returns:
         The trained ResNet50Classifier model.
     """
+    wandb.init(
+        project=os.environ["WANDB_PROJECT"],
+        entity=os.environ["WANDB_ENTITY"],
+        config={
+            "learning_rate": learning_rate,
+            "epochs": num_epochs,
+            "batch_size": batch_size,
+            "num_classes": num_classes,
+            "seed": seed,
+            "early_stopping_patience": early_stopping_patience,
+        },
+    )
+
     print("Loading datasets...")
-    print(f"  Train: {train_manifest}")
-    print(f"  Val: {val_manifest}")
-    print(f"  Test: {test_manifest}")
     train_ds, val_ds, test_ds = get_dataloaders(
         train_manifest=train_manifest,
         val_manifest=val_manifest,
@@ -195,17 +218,52 @@ def train(
         seed=seed,
     )
 
+    best_val_accuracy = 0.0
+    best_epoch = 0
+    epochs_without_improvement = 0
+
     print("Starting training...")
-    for epoch in tqdm(range(num_epochs), desc="Training"):
-        train_loss = train_epoch(model, optimizer, train_ds, epoch + 1)
-        val_loss, val_accuracy = eval_epoch(model, val_ds)
-        print(
-            f"Epoch {epoch + 1}: Train Loss: {train_loss:.4f}, "
-            f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"
+    for epoch in range(1, num_epochs + 1):
+        train_metrics = train_epoch(model, optimizer, train_ds, epoch)
+        val_metrics = eval_epoch(model, val_ds)
+
+        wandb.log(
+            {
+                "train/loss": train_metrics["loss"],
+                "train/accuracy": train_metrics["accuracy"],
+                "val/loss": val_metrics["loss"],
+                "val/accuracy": val_metrics["accuracy"],
+                "epoch": epoch,
+            }
         )
 
+        if val_metrics["accuracy"] > best_val_accuracy:
+            best_val_accuracy = val_metrics["accuracy"]
+            best_epoch = epoch
+            epochs_without_improvement = 0
+            upload_best_model(
+                model,
+                epoch,
+                best_val_accuracy,
+                learning_rate,
+                batch_size,
+                num_classes,
+                seed,
+            )
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
     print("Running test evaluation...")
-    test_loss, test_accuracy = eval_epoch(model, test_ds)
-    print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
+    test_metrics = eval_epoch(model, test_ds)
+
+    log_final_metrics(best_val_accuracy, best_epoch, test_metrics)
+
+    print(
+        f"Training complete. Best val accuracy: {best_val_accuracy:.4f} (epoch {best_epoch})"
+    )
+    print(f"Test accuracy: {test_metrics['accuracy']:.4f}")
 
     return model
