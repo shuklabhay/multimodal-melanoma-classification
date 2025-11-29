@@ -73,25 +73,22 @@ def create_tf_dataset_from_bundle(
 def get_dataloaders(
     train_bundle: str = "/data/bundled/train.npz",
     val_bundle: str = "/data/bundled/val.npz",
-    test_bundle: str = "/data/bundled/test.npz",
     batch_size: int = 32,
-) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-    """Creates train, validation, and test dataloaders from bundled NPZ files.
+) -> tuple[tf.data.Dataset, tf.data.Dataset]:
+    """Creates train and validation dataloaders from bundled NPZ files.
 
     Args:
         train_bundle: Path to training bundle NPZ.
         val_bundle: Path to validation bundle NPZ.
-        test_bundle: Path to test bundle NPZ.
         batch_size: Batch size for all datasets.
 
     Returns:
-        Tuple of (train_dataset, val_dataset, test_dataset).
+        Tuple of (train_dataset, val_dataset).
     """
     train_ds = create_tf_dataset_from_bundle(train_bundle, batch_size=batch_size)
     val_ds = create_tf_dataset_from_bundle(val_bundle, batch_size=batch_size)
-    test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
 
-    return train_ds, val_ds, test_ds
+    return train_ds, val_ds
 
 
 def use_buffer(file_map: dict[str, str]) -> None:

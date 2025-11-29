@@ -15,7 +15,7 @@ from tqdm import tqdm
 load_dotenv()
 
 from src.models.model_builder import DynamicModel, ModelConfig, build_model
-from src.utils.data_utils import get_dataloaders
+from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
 from src.utils.eval_utils import compute_metrics, log_final_metrics, upload_best_model
 
 DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
@@ -174,7 +174,7 @@ def train(
     run_name: str,
     config: ModelConfig,
     num_epochs: int = 100,
-    batch_size: int = 64,
+    batch_size: int = 32,
     learning_rate: float = 1e-4,
     num_classes: int = 8,
     train_bundle: str = "/data/bundled/train.npz",
@@ -218,10 +218,9 @@ def train(
     )
 
     print("Loading datasets...")
-    train_ds, val_ds, test_ds = get_dataloaders(
+    train_ds, val_ds = get_dataloaders(
         train_bundle=train_bundle,
         val_bundle=val_bundle,
-        test_bundle=test_bundle,
         batch_size=batch_size,
     )
 
@@ -270,6 +269,9 @@ def train(
             if epochs_without_improvement >= early_stopping_patience:
                 print(f"Early stopping at epoch {epoch}")
                 break
+
+    print("Loading test dataset...")
+    test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
 
     print("Running test evaluation...")
     test_metrics = eval_epoch(model, test_ds)
