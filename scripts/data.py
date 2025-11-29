@@ -7,7 +7,7 @@ from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.data_utils import _use_buffer
+from src.utils.data_utils import use_buffer
 
 app = Typer()
 
@@ -66,7 +66,7 @@ def process_images() -> None:
         ["uv", "run", "modal", "run", "-m", "src.use_modal::process_images"],
         check=True,
     )
-    _use_buffer(
+    use_buffer(
         {
             "isic_split_train.jsonl": "assets/manifests/isic_split_train.jsonl",
             "isic_split_val.jsonl": "assets/manifests/isic_split_val.jsonl",

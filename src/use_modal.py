@@ -54,6 +54,14 @@ def narratives_entrypoint() -> None:
     print("✓ Narrative text generation complete on Modal")
 
 
+@app.function(timeout=86400)
+def bundle_splits() -> None:
+    """Bundle manifest data into NPZ files for each split."""
+    from src.utils.data_utils import preprocess_and_bundle_data
+
+    preprocess_and_bundle_data()
+
+
 @app.function(
     gpu="L4",
     cpu=4,

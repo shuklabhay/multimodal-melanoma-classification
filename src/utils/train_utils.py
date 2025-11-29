@@ -177,9 +177,9 @@ def train(
     batch_size: int = 64,
     learning_rate: float = 1e-4,
     num_classes: int = 8,
-    train_manifest: str = "/root/assets/manifests/split_train.jsonl",
-    val_manifest: str = "/root/assets/manifests/split_val.jsonl",
-    test_manifest: str = "/root/assets/manifests/split_test.jsonl",
+    train_bundle: str = "/data/bundled/train.npz",
+    val_bundle: str = "/data/bundled/val.npz",
+    test_bundle: str = "/data/bundled/test.npz",
     seed: int = 0,
     early_stopping_patience: int = 10,
 ) -> DynamicModel:
@@ -192,9 +192,9 @@ def train(
         batch_size: Number of samples per batch.
         learning_rate: Learning rate for the Adam optimizer.
         num_classes: Number of output classes for the classifier.
-        train_manifest: Path to the training data manifest file.
-        val_manifest: Path to the validation data manifest file.
-        test_manifest: Path to the test data manifest file.
+        train_bundle: Path to the training data bundle NPZ.
+        val_bundle: Path to the validation data bundle NPZ.
+        test_bundle: Path to the test data bundle NPZ.
         seed: Random seed for reproducibility.
         early_stopping_patience: Number of epochs without improvement before stopping.
 
@@ -219,9 +219,9 @@ def train(
 
     print("Loading datasets...")
     train_ds, val_ds, test_ds = get_dataloaders(
-        train_manifest=train_manifest,
-        val_manifest=val_manifest,
-        test_manifest=test_manifest,
+        train_bundle=train_bundle,
+        val_bundle=val_bundle,
+        test_bundle=test_bundle,
         batch_size=batch_size,
     )
 

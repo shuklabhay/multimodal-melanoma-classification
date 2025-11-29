@@ -60,6 +60,22 @@ def train() -> None:
     )
 
 
+def bundle() -> None:
+    """Bundle data splits into NPZ files on Modal."""
+    print("\nStarting data bundling on Modal...")
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::bundle_splits",
+        ],
+        check=True,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def main(ctx: Context) -> None:
     """Interactive CLI for training utilities."""
@@ -67,13 +83,16 @@ def main(ctx: Context) -> None:
         return
 
     print("\n=== Training Utilities ===")
-    print("  1. Train model")
-    print("  2. Exit")
+    print("  1. Bundle data")
+    print("  2. Train model")
+    print("  3. Exit")
     choice = input("\nEnter your choice: ").strip()
 
     if choice == "1":
-        train()
+        bundle()
     elif choice == "2":
+        train()
+    elif choice == "3":
         print("Exiting...")
         return
     else:
