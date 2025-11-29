@@ -6,8 +6,6 @@ import wandb
 from flax import nnx, traverse_util
 from safetensors.flax import save_file
 
-from src.models.backbones import ResNet50Classifier
-
 
 def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
     """Calculate accuracy from logits and labels.
@@ -42,7 +40,7 @@ def compute_metrics(
 
 
 def upload_best_model(
-    model: ResNet50Classifier,
+    model: nnx.Module,
     epoch: int,
     val_accuracy: float,
     learning_rate: float,
@@ -53,7 +51,7 @@ def upload_best_model(
     """Save and upload best model as WandB artifact.
 
     Args:
-        model: The ResNet50Classifier model to save.
+        model: The model to save.
         epoch: The current training epoch.
         val_accuracy: The validation accuracy achieved.
         learning_rate: The learning rate used for training.

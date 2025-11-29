@@ -25,8 +25,8 @@ def recursive_from_nnx(node):
     return node
 
 
-class ResNet50Classifier(nnx.Module):
-    def __init__(self, num_classes: int, rngs: nnx.Rngs):
+class ResNet50Backbone(nnx.Module):
+    def __init__(self):
         hf_model = cast(
             FlaxResNetModel, FlaxResNetModel.from_pretrained("microsoft/resnet-50")
         )
@@ -41,9 +41,17 @@ class ResNet50Classifier(nnx.Module):
                 ),
             }
         )
-        self.head = nnx.Linear(2048, num_classes, rngs=rngs)
 
-    def __call__(self, x, train: bool = False):
+    def __call__(self, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
+        """Forward pass through ResNet50.
+
+        Args:
+            x: Input images of shape (batch, height, width, channels).
+            train: Whether in training mode (unused, kept for API consistency).
+
+        Returns:
+            Embeddings of shape (batch, 2048).
+        """
         legacy_vars = recursive_from_nnx(self.backbone_params)
         backbone_output = self.backbone_module.apply(
             legacy_vars, pixel_values=x, mutable=False
@@ -54,7 +62,6 @@ class ResNet50Classifier(nnx.Module):
 
         embedding = backbone_output.pooler_output
         assert embedding is not None, "pooler_output should not be None"
-        embedding = jnp.squeeze(embedding, axis=(-1, -2))
 
-        logits = self.head(embedding)
-        return logits
+        embedding = jnp.squeeze(embedding, axis=(-1, -2))
+        return embedding

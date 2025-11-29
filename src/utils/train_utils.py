@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 load_dotenv()
 
-from src.models.backbones import ResNet50Classifier
+from src.models.model_builder import DynamicModel, ModelConfig, build_model
 from src.utils.data_utils import get_dataloaders
 from src.utils.eval_utils import compute_metrics, log_final_metrics, upload_best_model
 
@@ -22,27 +22,30 @@ DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
 
 
 def create_train_state(
-    num_classes: int = 8, learning_rate: float = 1e-4, seed: int = 0
-) -> tuple[ResNet50Classifier, nnx.Optimizer]:
-    """Initializes a ResNet50Classifier model and an Adam optimizer.
+    config: ModelConfig,
+    num_classes: int = 8,
+    learning_rate: float = 1e-4,
+    seed: int = 0,
+) -> tuple[DynamicModel, nnx.Optimizer]:
+    """Initializes a model from config and an Adam optimizer.
 
     Args:
+        config: Configuration dictionary with encoder and model settings.
         num_classes: The number of output classes for the classifier.
         learning_rate: The learning rate for the Adam optimizer.
         seed: Random seed for model initialization.
 
     Returns:
-        A tuple containing the initialized ResNet50Classifier model and the nnx.Optimizer.
+        A tuple containing the initialized model and the nnx.Optimizer.
     """
-    rngs = nnx.Rngs(seed)
-    model = ResNet50Classifier(num_classes=num_classes, rngs=rngs)
+    model = build_model(config=config, num_classes=num_classes, seed=seed)
     optimizer = nnx.Optimizer(model, optax.adam(learning_rate), wrt=nnx.Param)
     return model, optimizer
 
 
 @nnx.jit
 def train_step(
-    model: ResNet50Classifier,
+    model: nnx.Module,
     optimizer: nnx.Optimizer,
     images: jax.Array,
     labels: jax.Array,
@@ -50,7 +53,7 @@ def train_step(
     """Performs a single training step.
 
     Args:
-        model: The ResNet50Classifier model to train.
+        model: The model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
         images: Batch of input images.
         labels: Batch of integer labels.
@@ -59,7 +62,7 @@ def train_step(
         A tuple containing the loss and logits for the batch.
     """
 
-    def loss_fn(model: ResNet50Classifier) -> tuple[jax.Array, jax.Array]:
+    def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
         logits = model(images, train=True)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits, labels))
         return loss, logits
@@ -71,14 +74,14 @@ def train_step(
 
 @nnx.jit
 def eval_step(
-    model: ResNet50Classifier,
+    model: nnx.Module,
     images: jax.Array,
     labels: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
     """Performs a single evaluation step.
 
     Args:
-        model: The ResNet50Classifier model to evaluate.
+        model: The model to evaluate.
         images: Batch of input images.
         labels: Batch of integer labels.
 
@@ -91,7 +94,7 @@ def eval_step(
 
 
 def train_epoch(
-    model: ResNet50Classifier,
+    model: nnx.Module,
     optimizer: nnx.Optimizer,
     train_ds: tf.data.Dataset,
     epoch: int,
@@ -99,7 +102,7 @@ def train_epoch(
     """Trains the model for one epoch.
 
     Args:
-        model: The ResNet50Classifier model to train.
+        model: The model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
         train_ds: The training dataset.
         epoch: The current epoch number (for progress bar display).
@@ -110,15 +113,16 @@ def train_epoch(
     all_logits = []
     all_labels = []
     all_losses = []
-    batches = cast(Iterable[DatasetBatch], train_ds.as_numpy_iterator())
 
+    batches = cast(Iterable[DatasetBatch], train_ds.as_numpy_iterator())
     pbar = tqdm(
         batches,
         desc=f"Epoch {epoch}",
         leave=False,
         total=int(train_ds.cardinality().numpy()),
     )
-    for (images, _texts), labels in pbar:
+    for batch in pbar:
+        (images, _texts), labels = batch
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
@@ -134,11 +138,14 @@ def train_epoch(
     return compute_metrics(all_logits, all_labels, all_losses)
 
 
-def eval_epoch(model: ResNet50Classifier, ds: tf.data.Dataset) -> dict[str, float]:
+def eval_epoch(
+    model: nnx.Module,
+    ds: tf.data.Dataset,
+) -> dict[str, float]:
     """Evaluates the model on a dataset.
 
     Args:
-        model: The ResNet50Classifier model to evaluate.
+        model: The model to evaluate.
         ds: The dataset to evaluate on.
 
     Returns:
@@ -164,7 +171,9 @@ def eval_epoch(model: ResNet50Classifier, ds: tf.data.Dataset) -> dict[str, floa
 
 
 def train(
-    num_epochs: int = 15,
+    run_name: str,
+    config: ModelConfig,
+    num_epochs: int = 100,
     batch_size: int = 16,
     learning_rate: float = 1e-4,
     num_classes: int = 8,
@@ -173,10 +182,12 @@ def train(
     test_manifest: str = "/root/assets/manifests/split_test.jsonl",
     seed: int = 0,
     early_stopping_patience: int = 10,
-) -> ResNet50Classifier:
+) -> DynamicModel:
     """Full training loop with WandB tracking and early stopping.
 
     Args:
+        run_name: Name for the WandB run.
+        config: Model configuration dictionary.
         num_epochs: Maximum number of epochs to train.
         batch_size: Number of samples per batch.
         learning_rate: Learning rate for the Adam optimizer.
@@ -188,12 +199,15 @@ def train(
         early_stopping_patience: Number of epochs without improvement before stopping.
 
     Returns:
-        The trained ResNet50Classifier model.
+        The trained model.
     """
     wandb.init(
         project=os.environ["WANDB_PROJECT"],
         entity=os.environ["WANDB_ENTITY"],
+        name=run_name,
         config={
+            "config_name": run_name.split("_", 2)[-1],
+            **config,
             "learning_rate": learning_rate,
             "epochs": num_epochs,
             "batch_size": batch_size,
@@ -213,6 +227,7 @@ def train(
 
     print("Creating model and optimizer...")
     model, optimizer = create_train_state(
+        config=config,
         num_classes=num_classes,
         learning_rate=learning_rate,
         seed=seed,

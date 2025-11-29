@@ -12,7 +12,8 @@ app = App(
     "lesion-classification",
     image=Image.debian_slim(python_version="3.11")
     .uv_sync()
-    .add_local_dir("assets", "/root/assets"),
+    .add_local_dir("assets", "/root/assets")
+    .add_local_dir("config", "/root/config"),
     volumes={
         "/data": Volume.from_name("data", create_if_missing=True),
     },
@@ -72,22 +73,17 @@ def narratives_entrypoint() -> None:
         modal.Secret.from_dotenv(),
     ],
 )
-def train_model(
-    num_epochs: int = 15,
-    batch_size: int = 16,
-    learning_rate: float = 1e-4,
-    num_classes: int = 8,
-    seed: int = 0,
-    early_stopping_patience: int = 10,
-):
-    """Train the lesion classification model on Modal with WandB tracking."""
+def train_model(run_name: str, config_name: str):
+    """Train the lesion classification model on Modal with WandB tracking.
+
+    Args:
+        run_name: Name for the WandB run.
+        config_name: Name of the config file (without .yaml extension).
+    """
+    from src.models.model_builder import load_config
     from src.utils.train_utils import train
 
-    train(
-        num_epochs=num_epochs,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        num_classes=num_classes,
-        seed=seed,
-        early_stopping_patience=early_stopping_patience,
-    )
+    config_path = f"/root/config/{config_name}.yaml"
+    config = load_config(config_path)
+
+    train(run_name=run_name, config=config)
