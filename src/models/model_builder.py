@@ -28,47 +28,22 @@ class DynamicModel(nnx.Module):
         rngs: nnx.Rngs,
     ):
         self.config = config
-        self.image_encoder: ResNet50Backbone | None = None
-        self.text_encoder = None
-        self.classifier: ClassifierDepth2 | ClassifierDepth4
 
         image_enc = config["image_enc"]
         text_enc = config["text_enc"]
         fusion_type = config["fusion_type"]
         num_classifier_blocks = config["num_classifier_blocks"]
 
-        input_dim: int
+        image_enc_dim: int
         if image_enc == "resnet50":
             self.image_encoder = ResNet50Backbone()
-            input_dim = ENCODER_OUTPUT_DIMS["resnet50"]
-
-        elif image_enc is not None:
-            raise ValueError(f"Unknown image encoder: {image_enc}")
-
-        if text_enc is not None:
-            raise NotImplementedError(f"Text encoder {text_enc} not yet implemented")
-
-        if fusion_type != "none":
-            raise NotImplementedError(f"Fusion type {fusion_type} not yet implemented")
-
-        if self.image_encoder is None and self.text_encoder is None:
-            raise ValueError("At least one encoder must be specified")
+            image_enc_dim = ENCODER_OUTPUT_DIMS["resnet50"]
 
         if num_classifier_blocks == 2:
             self.classifier = ClassifierDepth2(
-                input_dim=input_dim,
+                image_enc_dim=image_enc_dim,
                 num_classes=num_classes,
                 rngs=rngs,
-            )
-        elif num_classifier_blocks == 4:
-            self.classifier = ClassifierDepth4(
-                input_dim=input_dim,
-                num_classes=num_classes,
-                rngs=rngs,
-            )
-        else:
-            raise ValueError(
-                f"Unsupported num_classifier_blocks: {num_classifier_blocks}"
             )
 
     def __call__(self, images: jnp.ndarray, train: bool = False) -> jnp.ndarray:

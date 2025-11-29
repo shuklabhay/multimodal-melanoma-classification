@@ -42,11 +42,7 @@ def process_images() -> None:
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
 def process_narratives() -> None:
-    """Generates narratives from pre-generated manifests using Nous API.
-
-    Expects narrative manifests to already exist in /root/assets/manifests.
-    Only generates text content and saves to volume.
-    """
+    """Generates narratives from pre-generated manifests using Nous API."""
     generate_narrative_texts()
 
 
@@ -60,7 +56,7 @@ def narratives_entrypoint() -> None:
 
 @app.function(
     gpu="L4",
-    cpu=4,
+    cpu=8,
     memory=8192,
     timeout=86400,
     secrets=[

@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 from typing import cast
 
-import numpy as np
 import tensorflow as tf
 
 
@@ -40,7 +39,6 @@ def create_tf_dataset(
     manifest_path: str,
     batch_size: int,
     image_size: tuple[int, int] = (224, 224),
-    prefetch_size: int = tf.data.AUTOTUNE,
     is_training: bool = False,
 ) -> tf.data.Dataset:
     """Creates a TensorFlow dataset from a combined manifest.
@@ -49,7 +47,6 @@ def create_tf_dataset(
         manifest_path: Path to the combined manifest JSONL file.
         batch_size: Batch size for the dataset.
         image_size: Target image size (height, width).
-        prefetch_size: Number of batches to prefetch.
         is_training: Whether this is a training dataset.
 
     Returns:
@@ -99,8 +96,10 @@ def create_tf_dataset(
     dataset = dataset.map(load_and_process, num_parallel_calls=tf.data.AUTOTUNE)
 
     dataset = dataset.batch(batch_size)
+    num_batches = (len(manifest) + batch_size - 1) // batch_size
+    dataset = dataset.apply(tf.data.experimental.assert_cardinality(num_batches))
 
-    dataset = dataset.prefetch(buffer_size=prefetch_size)
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
     return dataset
 
 

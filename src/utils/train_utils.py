@@ -174,7 +174,7 @@ def train(
     run_name: str,
     config: ModelConfig,
     num_epochs: int = 100,
-    batch_size: int = 16,
+    batch_size: int = 64,
     learning_rate: float = 1e-4,
     num_classes: int = 8,
     train_manifest: str = "/root/assets/manifests/split_train.jsonl",
