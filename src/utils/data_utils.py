@@ -247,7 +247,9 @@ def preprocess_and_bundle_data(
             }
 
             for future in tqdm(
-                as_completed(futures), total=len(manifest), desc=f"Processing {split_name}"
+                as_completed(futures),
+                total=len(manifest),
+                desc=f"Processing {split_name}",
             ):
                 idx = futures[future]
                 image, text, label = future.result()
