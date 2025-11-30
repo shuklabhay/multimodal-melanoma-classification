@@ -64,8 +64,8 @@ def bundle_splits() -> None:
 
 @app.function(
     gpu="L4",
-    cpu=4,
-    memory=32768,
+    cpu=2,
+    memory=24576,
     timeout=86400,
     secrets=[
         modal.Secret.from_dict(
