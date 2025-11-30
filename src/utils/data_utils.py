@@ -85,12 +85,12 @@ def create_tf_dataset_from_bundle(
         is_training: If True, applies ISIC augmentation on-the-fly.
 
     Returns:
-        A tf.data.Dataset yielding ((image, text), label) tuples.
+        A tf.data.Dataset yielding ((image, embedding), label) tuples.
     """
     print(f"Loading bundle from {bundle_path}...")
     bundle = np.load(bundle_path, allow_pickle=True)
     images = bundle["images"]
-    texts = bundle["texts"]
+    embeddings = bundle["embeddings"]
     labels = bundle["labels"]
     print(f"✓ Loaded {len(labels)} samples from bundle")
 
@@ -98,7 +98,7 @@ def create_tf_dataset_from_bundle(
     std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
     def process_sample(
-        image: tf.Tensor, text: tf.Tensor, label: tf.Tensor
+        image: tf.Tensor, embedding: tf.Tensor, label: tf.Tensor
     ) -> tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
         image = tf.divide(tf.cast(image, tf.float32), 255.0)
 
@@ -108,9 +108,9 @@ def create_tf_dataset_from_bundle(
             image = cast(tf.Tensor, tf.image.resize_with_crop_or_pad(image, 224, 224))
 
         image = tf.divide(tf.subtract(image, mean), std)
-        return (image, text), label
+        return (image, embedding), label
 
-    dataset = tf.data.Dataset.from_tensor_slices((images, texts, labels))
+    dataset = tf.data.Dataset.from_tensor_slices((images, embeddings, labels))
     dataset = dataset.map(process_sample, num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.batch(batch_size)
 
@@ -182,16 +182,16 @@ def use_buffer(file_map: dict[str, str]) -> None:
 
 def _process_item(
     item: dict, target_h: int, target_w: int
-) -> tuple[np.ndarray, bytes, int]:
-    """Process a single manifest item (image + text).
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Process a single manifest item (image + embedding).
 
     Args:
-        item: Manifest item with image_path, text_path, and label.
+        item: Manifest item with image_path, embedding_path, and label.
         target_h: Target image height.
         target_w: Target image width.
 
     Returns:
-        Tuple of (processed_image, text_bytes, label).
+        Tuple of (processed_image, embedding, label).
     """
     image = tf.io.read_file(item["image_path"])
     image = tf.image.decode_image(image, channels=3, expand_animations=False)
@@ -201,12 +201,12 @@ def _process_item(
     image = tf.image.resize_with_crop_or_pad(image, target_h, target_w)
     image = cast(tf.Tensor, tf.cast(image, tf.uint8))
 
-    text = tf.io.read_file(item["text_path"])
-    text = tf.strings.strip(text)
+    embedding_data = np.load(item["embedding_path"])
+    embedding = embedding_data["embedding"]
 
     return (
         image.numpy(),  # pyright: ignore[reportOptionalCall]
-        text.numpy(),  # pyright: ignore[reportOptionalCall]
+        embedding,
         item["label"],
     )
 
@@ -238,7 +238,7 @@ def preprocess_and_bundle_data(
         print(f"\nBundling {split_name} split...")
         manifest = load_manifest(str(manifest_file))
 
-        results: list[tuple[int, np.ndarray, bytes, int]] = []
+        results: list[tuple[int, np.ndarray, np.ndarray, int]] = []
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {
@@ -252,21 +252,20 @@ def preprocess_and_bundle_data(
                 desc=f"Processing {split_name}",
             ):
                 idx = futures[future]
-                image, text, label = future.result()
-                results.append((idx, image, text, label))
+                image, embedding, label = future.result()
+                results.append((idx, image, embedding, label))
 
-        # Sort by original index to maintain order
         results.sort(key=lambda x: x[0])
 
         all_images = [r[1] for r in results]
-        all_texts = [r[2] for r in results]
+        all_embeddings = [r[2] for r in results]
         all_labels = [r[3] for r in results]
 
         bundle_path = output_path / f"{split_name}.npz"
         np.savez(
             bundle_path,
             images=np.array(all_images, dtype=np.uint8),
-            texts=np.array(all_texts, dtype=object),
+            embeddings=np.array(all_embeddings, dtype=np.float32),
             labels=np.array(all_labels, dtype=np.int32),
         )
         print(f"✓ Saved {split_name}")

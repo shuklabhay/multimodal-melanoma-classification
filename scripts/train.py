@@ -126,17 +126,21 @@ def main(ctx: Context) -> None:
     print("  2. Compute class weights")
     print("  3. Train model")
     print("  4. Exit")
+
+    steps_map = {
+        "1": bundle,
+        "2": compute_class_weights,
+        "3": train,
+    }
+
     choice = input("\nEnter your choice: ").strip()
 
-    if choice == "1":
-        bundle()
-    elif choice == "2":
-        compute_class_weights()
-    elif choice == "3":
-        train()
-    elif choice == "4":
+    if choice == "4":
         print("Exiting...")
         return
+
+    if choice in steps_map:
+        steps_map[choice]()
     else:
         print("Invalid choice. Please run the script again.")
 
