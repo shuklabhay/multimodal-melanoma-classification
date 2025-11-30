@@ -323,6 +323,8 @@ def log_final_metrics(
     test_metrics: dict[str, float],
     test_logits: jnp.ndarray,
     test_labels: jnp.ndarray,
+    val_logits: jnp.ndarray,
+    val_labels: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
 
@@ -332,6 +334,8 @@ def log_final_metrics(
         test_metrics: Dictionary containing test set metrics.
         test_logits: Test set logits for confusion matrix.
         test_labels: Test set labels for confusion matrix.
+        val_logits: Val set logits for confusion matrix.
+        val_labels: Val set labels for confusion matrix.
     """
     wandb.log(
         {
@@ -347,6 +351,7 @@ def log_final_metrics(
     )
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
+    log_confusion_matrix(val_logits, val_labels, "Final Model Val Confusion Matrix")
 
     wandb.summary["best_val_balanced_accuracy"] = best_val_balanced_acc
     wandb.summary["best_epoch"] = best_epoch

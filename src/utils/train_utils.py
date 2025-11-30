@@ -203,7 +203,7 @@ def train(
     test_bundle: str = "/data/bundled/test.npz",
     class_weights_path: str = "/root/assets/class_weights.npy",
     seed: int = 0,
-    early_stopping_patience: int = 10,
+    early_stopping_patience: int = 7,
 ) -> DynamicModel:
     """Full training loop with WandB tracking and early stopping.
 
@@ -316,11 +316,18 @@ def train(
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-    print("Unloading train/val datasets...")
-    del train_ds, val_ds
+    print("Unloading train dataset...")
+    del train_ds
 
     print("Loading best model checkpoint...")
     load_best_from_wandb(model)
+
+    print("Running final val evaluation...")
+    val_result = eval_epoch(model, val_ds, return_predictions=True)
+    val_metrics, val_logits, val_labels = cast(
+        tuple[dict[str, float], jnp.ndarray, jnp.ndarray], val_result
+    )
+    del val_ds
 
     print("Loading test dataset...")
     test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
@@ -332,7 +339,13 @@ def train(
     )
 
     log_final_metrics(
-        best_val_balanced_acc, best_epoch, test_metrics, test_logits, test_labels
+        best_val_balanced_acc,
+        best_epoch,
+        test_metrics,
+        test_logits,
+        test_labels,
+        val_logits,
+        val_labels,
     )
 
     print(
