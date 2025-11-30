@@ -300,6 +300,7 @@ def train(
             )
             upload_best_to_wandb(
                 model,
+                run_name,
                 epoch,
                 best_val_balanced_acc,
                 learning_rate,

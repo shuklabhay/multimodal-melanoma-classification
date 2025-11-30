@@ -79,7 +79,7 @@ def select_config() -> Path:
 def train() -> None:
     """Launch training on Modal with selected config."""
     config_path = select_config()
-    timestamp = datetime.now().strftime("%b%d_%H%M").lower()
+    timestamp = datetime.now().strftime("%b%d%H%M").lower()
     run_name = f"{config_path.stem}_{timestamp}"
 
     print(f"\nStarting training with config: {config_path.stem}")

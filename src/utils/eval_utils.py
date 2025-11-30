@@ -217,6 +217,7 @@ def compute_metrics(
 
 def upload_best_to_wandb(
     model: nnx.Module,
+    run_name: str,
     epoch: int,
     val_accuracy: float,
     learning_rate: float,
@@ -228,6 +229,7 @@ def upload_best_to_wandb(
 
     Args:
         model: The model to save.
+        run_name: Name of the training run.
         epoch: The current training epoch.
         val_accuracy: The validation accuracy achieved.
         learning_rate: The learning rate used for training.
@@ -235,7 +237,7 @@ def upload_best_to_wandb(
         num_classes: The number of output classes for the model.
         seed: The random seed used for model initialization.
     """
-    local_path = "best_model.safetensors"
+    local_path = f"{run_name}_best.safetensors"
     _, params, _ = nnx.split(model, nnx.Param, ...)
 
     flat_params = traverse_util.flatten_dict(nnx.to_pure_dict(params), sep=".")
