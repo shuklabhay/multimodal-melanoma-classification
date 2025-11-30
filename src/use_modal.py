@@ -1,5 +1,3 @@
-import os
-
 import modal
 from modal import App, Image, Volume
 
@@ -14,7 +12,8 @@ app = App(
     "lesion-classification",
     image=Image.debian_slim(python_version="3.11")
     .uv_sync()
-    .add_local_dir("assets", "/root/assets"),
+    .add_local_dir("assets", "/root/assets")
+    .add_local_dir("config", "/root/config"),
     volumes={
         "/data": Volume.from_name("data", create_if_missing=True),
     },
@@ -43,11 +42,7 @@ def process_images() -> None:
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
 def process_narratives() -> None:
-    """Generates narratives from pre-generated manifests using Nous API.
-
-    Expects narrative manifests to already exist in /root/assets/manifests.
-    Only generates text content and saves to volume.
-    """
+    """Generates narratives from pre-generated manifests using Nous API."""
     generate_narrative_texts()
 
 
@@ -57,3 +52,42 @@ def narratives_entrypoint() -> None:
     print("Calling Modal to generate narrative texts...")
     process_narratives.remote()
     print("✓ Narrative text generation complete on Modal")
+
+
+@app.function(timeout=86400)
+def bundle_splits() -> None:
+    """Bundle manifest data into NPZ files for each split."""
+    from src.utils.data_utils import preprocess_and_bundle_data
+
+    preprocess_and_bundle_data()
+
+
+@app.function(
+    gpu="L4",
+    cpu=2,
+    memory=24576,
+    timeout=86400,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+            }
+        ),
+        modal.Secret.from_dotenv(),
+    ],
+)
+def train_model(run_name: str, config_name: str):
+    """Train the lesion classification model on Modal with WandB tracking.
+
+    Args:
+        run_name: Name for the WandB run.
+        config_name: Name of the config file (without .yaml extension).
+    """
+    from src.models.model_builder import load_config
+    from src.utils.train_utils import train
+
+    config_path = f"/root/config/{config_name}.yaml"
+    config = load_config(config_path)
+
+    train(run_name=run_name, config=config)

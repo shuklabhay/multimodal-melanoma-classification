@@ -1,5 +1,4 @@
-import os
-import shutil
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +6,8 @@ from pathlib import Path
 from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.utils.data_utils import use_buffer
 
 app = Typer()
 
@@ -19,6 +20,7 @@ def run_all() -> None:
     process_images()
     generate_narrative_manifests()
     generate_narratives()
+    create_combined_manifests()
 
 
 @app.command()
@@ -64,7 +66,7 @@ def process_images() -> None:
         ["uv", "run", "modal", "run", "-m", "src.use_modal::process_images"],
         check=True,
     )
-    _use_buffer(
+    use_buffer(
         {
             "isic_split_train.jsonl": "assets/manifests/isic_split_train.jsonl",
             "isic_split_val.jsonl": "assets/manifests/isic_split_val.jsonl",
@@ -116,39 +118,59 @@ def verify_narrative_manifests() -> None:
     verify_narrative_manifests()
 
 
-def _use_buffer(file_map: dict[str, str]) -> None:
-    """Downloads buffer from Modal, moves mapped files to destinations, deletes rest.
+@app.command()
+def create_combined_manifests() -> None:
+    """Creates combined manifests with image_path, text_path, and label from ISIC and narrative manifests."""
+    manifests_dir = Path("assets/manifests")
 
-    Args:
-        file_map: Dict mapping buffer filenames to local destination paths.
-    """
+    for split in ["train", "val", "test"]:
+        isic_path = manifests_dir / f"isic_split_{split}.jsonl"
+        narrative_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        combined_path = manifests_dir / f"split_{split}.jsonl"
 
-    print("\nDownloading outputs from Modal Volume...")
-    subprocess.run(
-        ["uv", "run", "modal", "volume", "get", "--force", "data", "buffer", "."],
-        check=True,
-    )
+        print(f"\nCreating combined manifest for {split}...")
 
-    buffer_dir = Path("buffer")
-    if not buffer_dir.exists():
-        return
+        with open(isic_path) as f_isic, open(narrative_path) as f_narrative:
+            isic_lines = f_isic.readlines()
+            narrative_lines = f_narrative.readlines()
 
-    for file in buffer_dir.iterdir():
-        if file.name in file_map:
-            dest_path = Path(file_map[file.name])
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            file.rename(dest_path)
-            print(f"  Moved {file.name} to {dest_path}")
-        else:
-            file.unlink()
-            print(f"  Deleted {file.name}")
+            if len(isic_lines) != len(narrative_lines):
+                raise ValueError(
+                    f"Mismatched manifest lengths for {split}: "
+                    f"ISIC has {len(isic_lines)} items, narrative has {len(narrative_lines)} items"
+                )
 
-    shutil.rmtree(buffer_dir)
-    subprocess.run(
-        ["uv", "run", "modal", "volume", "rm", "data", "buffer", "-r"],
-        check=True,
-    )
-    print("✓ Modal buffer cleared")
+            combined_items = []
+            for idx, (isic_line, narrative_line) in enumerate(
+                zip(isic_lines, narrative_lines)
+            ):
+                isic_item = json.loads(isic_line)
+                narrative_item = json.loads(narrative_line)
+
+                if isic_item["label"] != narrative_item["label"]:
+                    raise ValueError(
+                        f"Label mismatch at line {idx + 1} in {split}: "
+                        f"ISIC label={isic_item['label']}, narrative label={narrative_item['label']}"
+                    )
+
+                combined_item = {
+                    "image_path": isic_item["image_path"],
+                    "text_path": narrative_item["text_path"],
+                    "age_approx": isic_item["age_approx"],
+                    "sex": isic_item["sex"],
+                    "anatom_site_general": isic_item["anatom_site_general"],
+                    "label": isic_item["label"],
+                    "source": "isic",
+                }
+                combined_items.append(combined_item)
+
+        with open(combined_path, "w") as f_out:
+            for item in combined_items:
+                f_out.write(json.dumps(item) + "\n")
+
+        print(f"  Created {combined_path.name} with {len(combined_items)} items")
+
+    print("\n✓ Combined manifests created successfully!")
 
 
 @app.callback(invoke_without_command=True)
@@ -164,8 +186,9 @@ def main(ctx: Context) -> None:
     print("  3. Create image manifests")
     print("  4. Generate narrative manifests")
     print("  5. Generate narratives")
-    print("  6. Run all")
-    print("  7. Exit")
+    print("  6. Create combined manifests")
+    print("  7. Run all")
+    print("  8. Exit")
     choice = input("\nEnter your choice: ").strip().lower()
 
     steps_map = {
@@ -174,10 +197,11 @@ def main(ctx: Context) -> None:
         "3": process_images,
         "4": generate_narrative_manifests,
         "5": generate_narratives,
-        "6": run_all,
+        "6": create_combined_manifests,
+        "7": run_all,
     }
 
-    if choice == "7":
+    if choice == "8":
         print("Exiting...")
         return
 
@@ -186,7 +210,7 @@ def main(ctx: Context) -> None:
         invalid_steps = [s for s in selected_steps if s not in steps_map]
 
         if invalid_steps:
-            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-7.")
+            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-8.")
             return
 
         print(f"\nRunning steps: {', '.join(selected_steps)}\n")
