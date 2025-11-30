@@ -203,7 +203,7 @@ def train(
     test_bundle: str = "/data/bundled/test.npz",
     class_weights_path: str = "/root/assets/class_weights.npy",
     seed: int = 0,
-    early_stopping_patience: int = 7,
+    early_stopping_patience: int = 10,
 ) -> DynamicModel:
     """Full training loop with WandB tracking and early stopping.
 

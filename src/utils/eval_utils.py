@@ -1,3 +1,4 @@
+import glob
 from typing import cast
 
 import jax
@@ -266,10 +267,12 @@ def load_best_from_wandb(model: nnx.Module) -> None:
     Args:
         model: The model to load parameters into (modified in place).
     """
+
     artifact = wandb.use_artifact("best-model:latest")
     print(f"Loading {artifact.name} (version {artifact.version})")
     artifact_dir = artifact.download()
-    safetensor_path = f"{artifact_dir}/best_model.safetensors"
+    safetensor_files = glob.glob(f"{artifact_dir}/*.safetensors")
+    safetensor_path = safetensor_files[0]
     flat_params = load_file(safetensor_path)
 
     _, params, _ = nnx.split(model, nnx.Param, ...)
