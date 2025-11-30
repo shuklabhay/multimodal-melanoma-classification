@@ -135,7 +135,7 @@ def train_epoch(
         total=int(train_ds.cardinality().numpy()),
     )
     for batch in pbar:
-        (images, text), labels = batch
+        (images, embeddings), labels = batch
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
@@ -173,7 +173,7 @@ def eval_epoch(
     all_losses = []
 
     batches = cast(Iterable[DatasetBatch], ds.as_numpy_iterator())
-    for (images, text), labels in batches:
+    for (images, embeddings), labels in batches:
         images_jax = jnp.array(images)
         labels_jax = jnp.array(labels)
 
