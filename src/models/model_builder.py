@@ -31,29 +31,53 @@ class DynamicModel(nnx.Module):
 
         image_enc = config["image_enc"]
         text_enc = config["text_enc"]
-        fusion_type = config["fusion_type"]
         num_classifier_blocks = config["num_classifier_blocks"]
 
-        image_enc_dim: int
-        if image_enc == "resnet50":
+        self.image_encoder = None
+        classifier_input_dim: int
+
+        if image_enc == "resnet50" and text_enc is None:
             self.image_encoder = ResNet50Backbone()
-            image_enc_dim = ENCODER_OUTPUT_DIMS["resnet50"]
+            classifier_input_dim = ENCODER_OUTPUT_DIMS["resnet50"]
+        elif text_enc == "mpnet-base" and image_enc is None:
+            classifier_input_dim = ENCODER_OUTPUT_DIMS["mpnet-base"]
+        else:
+            raise NotImplementedError("Fusion or invalid config combination")
 
         if num_classifier_blocks == 2:
             self.classifier = ClassifierDepth2(
-                image_enc_dim=image_enc_dim,
+                input_dim=classifier_input_dim,
                 num_classes=num_classes,
                 rngs=rngs,
             )
-
-    def __call__(self, images: jnp.ndarray, train: bool = False) -> jnp.ndarray:
-        if self.image_encoder is not None:
-            features = self.image_encoder(images, train=train)
+        elif num_classifier_blocks == 4:
+            self.classifier = ClassifierDepth4(
+                input_dim=classifier_input_dim,
+                num_classes=num_classes,
+                rngs=rngs,
+            )
         else:
-            raise NotImplementedError("Text-only model not yet implemented")
+            raise ValueError(f"Unsupported num_classifier_blocks: {num_classifier_blocks}")
 
-        logits = self.classifier(features)
-        return logits
+    def __call__(
+        self,
+        images: jnp.ndarray | None,
+        embeddings: jnp.ndarray | None,
+        train: bool = False,
+    ) -> jnp.ndarray:
+        if self.config["image_enc"] is not None and self.config["text_enc"] is None:
+            if images is None:
+                raise ValueError("Model configured for images but no images provided")
+            features = self.image_encoder(images, train=train)
+            return self.classifier(features)
+
+        elif self.config["text_enc"] is not None and self.config["image_enc"] is None:
+            if embeddings is None:
+                raise ValueError("Model configured for text but no embeddings provided")
+            return self.classifier(embeddings)
+
+        else:
+            raise NotImplementedError("Fusion path not implemented yet")
 
 
 def load_config(config_path: str) -> ModelConfig:

@@ -77,12 +77,12 @@ class Classifier4FiLM(nnx.Module):
 class ClassifierDepth2(nnx.Module):
     def __init__(
         self,
-        image_enc_dim: int,
+        input_dim: int,
         num_classes: int,
         rngs: nnx.Rngs,
         hidden_dim: int = 1024,
     ):
-        self.linear1 = nnx.Linear(image_enc_dim, hidden_dim, rngs=rngs)
+        self.linear1 = nnx.Linear(input_dim, hidden_dim, rngs=rngs)
         self.linear2 = nnx.Linear(hidden_dim, num_classes, rngs=rngs)
 
     def __call__(self, features: jnp.ndarray) -> jnp.ndarray:
@@ -102,12 +102,12 @@ class ClassifierDepth2(nnx.Module):
 class ClassifierDepth4(nnx.Module):
     def __init__(
         self,
-        image_enc_dim: int,
+        input_dim: int,
         num_classes: int,
         rngs: nnx.Rngs,
         hidden_dim: int = 1024,
     ):
-        self.linear1 = nnx.Linear(image_enc_dim, hidden_dim, rngs=rngs)
+        self.linear1 = nnx.Linear(input_dim, hidden_dim, rngs=rngs)
         self.linear2 = nnx.Linear(hidden_dim, hidden_dim, rngs=rngs)
         self.linear3 = nnx.Linear(hidden_dim, hidden_dim, rngs=rngs)
         self.linear4 = nnx.Linear(hidden_dim, num_classes, rngs=rngs)

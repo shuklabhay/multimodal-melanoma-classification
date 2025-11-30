@@ -53,6 +53,7 @@ def train_step(
     model: nnx.Module,
     optimizer: nnx.Optimizer,
     images: jax.Array,
+    embeddings: jax.Array,
     labels: jax.Array,
     class_weights: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
@@ -62,6 +63,7 @@ def train_step(
         model: The model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
         images: Batch of input images.
+        embeddings: Batch of text embeddings.
         labels: Batch of integer labels.
         class_weights: Per-class weights for loss weighting.
 
@@ -70,7 +72,7 @@ def train_step(
     """
 
     def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
-        logits = model(images, train=True)
+        logits = model(images=images, embeddings=embeddings, train=True)
         per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
             logits, labels
         )
@@ -87,6 +89,7 @@ def train_step(
 def eval_step(
     model: nnx.Module,
     images: jax.Array,
+    embeddings: jax.Array,
     labels: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
     """Performs a single evaluation step.
@@ -94,12 +97,13 @@ def eval_step(
     Args:
         model: The model to evaluate.
         images: Batch of input images.
+        embeddings: Batch of text embeddings.
         labels: Batch of integer labels.
 
     Returns:
         A tuple containing the loss and logits for the batch.
     """
-    logits = model(images, train=False)
+    logits = model(images=images, embeddings=embeddings, train=False)
     loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits, labels))
     return loss, logits
 
@@ -137,10 +141,11 @@ def train_epoch(
     for batch in pbar:
         (images, embeddings), labels = batch
         images_jax = jnp.array(images)
+        embeddings_jax = jnp.array(embeddings)
         labels_jax = jnp.array(labels)
 
         loss, logits = train_step(
-            model, optimizer, images_jax, labels_jax, class_weights
+            model, optimizer, images_jax, embeddings_jax, labels_jax, class_weights
         )
         all_logits.append(logits)
         all_labels.append(labels_jax)
@@ -175,9 +180,10 @@ def eval_epoch(
     batches = cast(Iterable[DatasetBatch], ds.as_numpy_iterator())
     for (images, embeddings), labels in batches:
         images_jax = jnp.array(images)
+        embeddings_jax = jnp.array(embeddings)
         labels_jax = jnp.array(labels)
 
-        loss, logits = eval_step(model, images_jax, labels_jax)
+        loss, logits = eval_step(model, images_jax, embeddings_jax, labels_jax)
         all_logits.append(logits)
         all_labels.append(labels_jax)
         all_losses.append(float(loss))
