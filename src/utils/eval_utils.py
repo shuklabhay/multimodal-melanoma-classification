@@ -26,7 +26,7 @@ def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
 
 def calculate_balanced_accuracy(
     logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int
-) -> float:
+) -> tuple[float, dict[str, float]]:
     """Calculate balanced accuracy (mean of per-class recalls).
 
     Args:
@@ -35,16 +35,21 @@ def calculate_balanced_accuracy(
         num_classes: Number of classes.
 
     Returns:
-        Balanced accuracy value.
+        Tuple of (balanced_accuracy, per_class_accuracy_dict).
     """
     predictions = jnp.argmax(logits, axis=-1)
+    per_class_acc = {}
     recalls = []
     for c in range(num_classes):
         mask = labels == c
         if jnp.sum(mask) > 0:
             recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
             recalls.append(float(recall))
-    return sum(recalls) / len(recalls) if recalls else 0.0
+            per_class_acc[f"class_{c}"] = float(recall)
+        else:
+            per_class_acc[f"class_{c}"] = 0.0
+    balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
+    return balanced_acc, per_class_acc
 
 
 def calculate_sensitivity_specificity(
@@ -189,7 +194,9 @@ def compute_metrics(
         Dictionary containing computed metrics.
     """
     accuracy = float(calculate_accuracy(logits, labels))
-    balanced_accuracy = calculate_balanced_accuracy(logits, labels, num_classes)
+    balanced_accuracy, per_class_acc = calculate_balanced_accuracy(
+        logits, labels, num_classes
+    )
     loss = sum(losses) / len(losses)
 
     sensitivity, specificity = calculate_sensitivity_specificity(
@@ -212,6 +219,9 @@ def compute_metrics(
 
     for k, v in per_class_auroc.items():
         metrics[f"auroc_{k}"] = v
+
+    for k, v in per_class_acc.items():
+        metrics[f"balanced_accuracy_{k}"] = v
 
     return metrics
 
@@ -480,18 +490,20 @@ def log_final_metrics(
         val_logits: Val set logits for confusion matrix.
         val_labels: Val set labels for confusion matrix.
     """
-    wandb.log(
-        {
-            "test/loss": test_metrics["loss"],
-            "test/accuracy": test_metrics["accuracy"],
-            "test/balanced_accuracy": test_metrics["balanced_accuracy"],
-            "test/sensitivity": test_metrics["sensitivity_mean"],
-            "test/specificity": test_metrics["specificity_mean"],
-            "test/auroc": test_metrics["auroc"],
-            "test/ece": test_metrics["ece"],
-            "test/brier": test_metrics["brier"],
-        }
-    )
+    test_log_dict = {
+        "test/loss": test_metrics["loss"],
+        "test/accuracy": test_metrics["accuracy"],
+        "test/balanced_accuracy": test_metrics["balanced_accuracy"],
+        "test/sensitivity": test_metrics["sensitivity_mean"],
+        "test/specificity": test_metrics["specificity_mean"],
+        "test/auroc": test_metrics["auroc"],
+        "test/ece": test_metrics["ece"],
+        "test/brier": test_metrics["brier"],
+    }
+    for k, v in test_metrics.items():
+        if k.startswith("balanced_accuracy_class_"):
+            test_log_dict[f"test/{k}"] = v
+    wandb.log(test_log_dict)
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
     log_confusion_matrix(val_logits, val_labels, "Final Model Val Confusion Matrix")

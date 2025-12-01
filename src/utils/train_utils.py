@@ -308,26 +308,28 @@ def train(
         train_metrics = train_epoch(model, optimizer, train_ds, class_weights, epoch)
         val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
-        wandb.log(
-            {
-                "train/loss": train_metrics["loss"],
-                "train/accuracy": train_metrics["accuracy"],
-                "train/balanced_accuracy": train_metrics["balanced_accuracy"],
-                "train/sensitivity": train_metrics["sensitivity_mean"],
-                "train/specificity": train_metrics["specificity_mean"],
-                "train/auroc": train_metrics["auroc"],
-                "train/ece": train_metrics["ece"],
-                "train/brier": train_metrics["brier"],
-                "val/loss": val_metrics["loss"],
-                "val/accuracy": val_metrics["accuracy"],
-                "val/balanced_accuracy": val_metrics["balanced_accuracy"],
-                "val/sensitivity": val_metrics["sensitivity_mean"],
-                "val/specificity": val_metrics["specificity_mean"],
-                "val/auroc": val_metrics["auroc"],
-                "val/ece": val_metrics["ece"],
-                "val/brier": val_metrics["brier"],
-            }
-        )
+        log_dict = {
+            "train/loss": train_metrics["loss"],
+            "train/accuracy": train_metrics["accuracy"],
+            "train/balanced_accuracy": train_metrics["balanced_accuracy"],
+            "train/sensitivity": train_metrics["sensitivity_mean"],
+            "train/specificity": train_metrics["specificity_mean"],
+            "train/auroc": train_metrics["auroc"],
+            "train/ece": train_metrics["ece"],
+            "train/brier": train_metrics["brier"],
+            "val/loss": val_metrics["loss"],
+            "val/accuracy": val_metrics["accuracy"],
+            "val/balanced_accuracy": val_metrics["balanced_accuracy"],
+            "val/sensitivity": val_metrics["sensitivity_mean"],
+            "val/specificity": val_metrics["specificity_mean"],
+            "val/auroc": val_metrics["auroc"],
+            "val/ece": val_metrics["ece"],
+            "val/brier": val_metrics["brier"],
+        }
+        for k, v in val_metrics.items():
+            if k.startswith("balanced_accuracy_class_"):
+                log_dict[f"val/{k}"] = v
+        wandb.log(log_dict)
 
         if val_metrics["balanced_accuracy"] > best_val_balanced_acc:
             best_val_balanced_acc = val_metrics["balanced_accuracy"]
