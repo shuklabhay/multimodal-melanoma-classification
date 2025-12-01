@@ -108,6 +108,7 @@ def bundle() -> None:
             "run",
             "modal",
             "run",
+            "-d",
             "-m",
             "src.use_modal::bundle_splits",
         ],
