@@ -216,86 +216,141 @@ def compute_metrics(
     return metrics
 
 
-LOCAL_BEST_MODEL_PATH = "/tmp/best_model.safetensors"
-LOCAL_BEST_METADATA_PATH = "/tmp/best_model_metadata.txt"
+CHECKPOINT_BASE_DIR = "/data/checkpoints"
 
 
-def save_best_locally(
+def get_checkpoint_dir(run_name: str) -> str:
+    """Get the checkpoint directory path for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Path to the checkpoint directory.
+    """
+    return os.path.join(CHECKPOINT_BASE_DIR, run_name)
+
+
+def get_checkpoint_paths(run_name: str) -> tuple[str, str]:
+    """Get paths for model and metadata files for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Tuple of (model_path, metadata_path).
+    """
+    checkpoint_dir = get_checkpoint_dir(run_name)
+    model_path = os.path.join(checkpoint_dir, "best_model.safetensors")
+    metadata_path = os.path.join(checkpoint_dir, "metadata.txt")
+    return model_path, metadata_path
+
+
+def save_checkpoint(
     model: nnx.Module,
+    run_name: str,
     epoch: int,
     val_accuracy: float,
     learning_rate: float,
     batch_size: int,
     num_classes: int,
     seed: int,
-) -> None:
-    """Save best model locally, replacing any previous best.
+    config_name: str,
+) -> str:
+    """Save model checkpoint to the Modal volume.
 
     Args:
         model: The model to save.
+        run_name: Name of the training run.
         epoch: The current training epoch.
         val_accuracy: The validation accuracy achieved.
         learning_rate: The learning rate used for training.
         batch_size: The batch size used for training.
         num_classes: The number of output classes for the model.
         seed: The random seed used for model initialization.
+        config_name: Name of the config file used.
+
+    Returns:
+        Path to the checkpoint directory.
     """
-    if os.path.exists(LOCAL_BEST_MODEL_PATH):
-        os.remove(LOCAL_BEST_MODEL_PATH)
-    if os.path.exists(LOCAL_BEST_METADATA_PATH):
-        os.remove(LOCAL_BEST_METADATA_PATH)
+    checkpoint_dir = get_checkpoint_dir(run_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+
+    if os.path.exists(model_path):
+        os.remove(model_path)
+    if os.path.exists(metadata_path):
+        os.remove(metadata_path)
 
     _, params, _ = nnx.split(model, nnx.Param, ...)
     flat_params = traverse_util.flatten_dict(nnx.to_pure_dict(params), sep=".")
     flat_params = cast(dict[str, jax.Array], flat_params)
-    save_file(flat_params, LOCAL_BEST_MODEL_PATH)
+    save_file(flat_params, model_path)
 
-    with open(LOCAL_BEST_METADATA_PATH, "w") as f:
+    with open(metadata_path, "w") as f:
+        f.write(f"run_name={run_name}\n")
         f.write(f"epoch={epoch}\n")
         f.write(f"val_accuracy={val_accuracy}\n")
         f.write(f"learning_rate={learning_rate}\n")
         f.write(f"batch_size={batch_size}\n")
         f.write(f"num_classes={num_classes}\n")
         f.write(f"seed={seed}\n")
+        f.write(f"config_name={config_name}\n")
+        f.write(f"checkpoint_path={checkpoint_dir}\n")
+
+    print(f"Saved checkpoint to {checkpoint_dir}")
+    return checkpoint_dir
 
 
 def upload_best_to_wandb(run_name: str) -> None:
-    """Upload the final best model from local storage to WandB artifact.
+    """Upload the final best model from checkpoint directory to WandB artifact.
 
     Args:
         run_name: Name of the training run.
     """
-    if not os.path.exists(LOCAL_BEST_MODEL_PATH):
-        print("Warning: No local best model found to upload")
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+    checkpoint_dir = get_checkpoint_dir(run_name)
+
+    if not os.path.exists(model_path):
+        print(f"Warning: No checkpoint found at {model_path}")
         return
 
-    metadata = {"run_name": run_name}
-    with open(LOCAL_BEST_METADATA_PATH) as f:
+    metadata: dict[str, str | int | float] = {
+        "run_name": run_name,
+        "checkpoint_volume_path": checkpoint_dir,
+    }
+    with open(metadata_path) as f:
         for line in f:
-            key, value = line.strip().split("=")
+            key, value = line.strip().split("=", 1)
             if key in ("epoch", "batch_size", "num_classes", "seed"):
                 metadata[key] = int(value)
-            else:
+            elif key in ("val_accuracy", "learning_rate"):
                 metadata[key] = float(value)
+            else:
+                metadata[key] = value
 
     artifact = wandb.Artifact(
         name=f"{run_name}_final_model",
         type="model",
         metadata=metadata,
     )
-    artifact.add_file(LOCAL_BEST_MODEL_PATH, name=f"{run_name}_best.safetensors")
+    artifact.add_file(model_path, name=f"{run_name}_best.safetensors")
     wandb.log_artifact(artifact)
     print(f"Uploaded final best model artifact: {run_name}_final_model")
+    print(f"Checkpoint volume path: {checkpoint_dir}")
 
 
-def load_best_locally(model: nnx.Module) -> None:
-    """Load best model parameters from local storage.
+def load_checkpoint(model: nnx.Module, run_name: str) -> None:
+    """Load model parameters from checkpoint directory.
 
     Args:
         model: The model to load parameters into (modified in place).
+        run_name: Name of the training run to load checkpoint from.
     """
-    print(f"Loading best model from {LOCAL_BEST_MODEL_PATH}")
-    flat_params = load_file(LOCAL_BEST_MODEL_PATH)
+    model_path, _ = get_checkpoint_paths(run_name)
+    print(f"Loading checkpoint from {model_path}")
+    flat_params = load_file(model_path)
 
     _, params, _ = nnx.split(model, nnx.Param, ...)
     params_dict = nnx.to_pure_dict(params)
@@ -318,6 +373,67 @@ def load_best_locally(model: nnx.Module) -> None:
 
     update_recursive(params, nested_updated)
     nnx.update(model, params)
+
+
+def load_checkpoint_metadata(run_name: str) -> dict | None:
+    """Load checkpoint metadata for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Dictionary with checkpoint metadata, or None if not found.
+    """
+    _, metadata_path = get_checkpoint_paths(run_name)
+
+    if not os.path.exists(metadata_path):
+        return None
+
+    metadata = {}
+    with open(metadata_path) as f:
+        for line in f:
+            key, value = line.strip().split("=", 1)
+            if key in ("epoch", "batch_size", "num_classes", "seed"):
+                metadata[key] = int(value)
+            elif key in ("val_accuracy", "learning_rate"):
+                metadata[key] = float(value)
+            else:
+                metadata[key] = value
+
+    return metadata
+
+
+def checkpoint_exists(run_name: str) -> bool:
+    """Check if a checkpoint exists for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        True if checkpoint exists, False otherwise.
+    """
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+    return os.path.exists(model_path) and os.path.exists(metadata_path)
+
+
+def list_checkpoints() -> list[dict]:
+    """List all available checkpoints with their metadata.
+
+    Returns:
+        List of checkpoint metadata dicts, sorted by run name.
+    """
+    if not os.path.exists(CHECKPOINT_BASE_DIR):
+        return []
+
+    checkpoints = []
+    for run_dir in sorted(os.listdir(CHECKPOINT_BASE_DIR)):
+        run_name = run_dir
+        if checkpoint_exists(run_name):
+            metadata = load_checkpoint_metadata(run_name)
+            if metadata:
+                checkpoints.append(metadata)
+
+    return checkpoints
 
 
 def log_confusion_matrix(

@@ -1,3 +1,4 @@
+import ast
 import json
 import subprocess
 import sys
@@ -100,6 +101,105 @@ def train() -> None:
     )
 
 
+def fetch_checkpoints() -> list[dict]:
+    """Fetch available checkpoints from Modal volume."""
+    print("\nFetching checkpoints from Modal volume...")
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::list_available_checkpoints",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    output = result.stdout.strip()
+    if not output or output == "[]":
+        return []
+
+    return ast.literal_eval(output)
+
+
+def select_checkpoint(checkpoints: list[dict]) -> dict | None:
+    """Prompt user to select a checkpoint to resume from."""
+    if not checkpoints:
+        print("\nNo checkpoints available.")
+        return None
+
+    print("\n=== Available Checkpoints ===")
+    for i, ckpt in enumerate(checkpoints, 1):
+        run_name = ckpt.get("run_name", "unknown")
+        epoch = ckpt.get("epoch", "?")
+        val_acc = ckpt.get("val_accuracy", 0)
+        config = ckpt.get("config_name", "unknown")
+        print(f"  {i}. {run_name}")
+        print(f"     Config: {config} | Epoch: {epoch} | Val Acc: {val_acc:.4f}")
+
+    print(f"  {len(checkpoints) + 1}. Cancel")
+
+    while True:
+        choice = input("\nSelect checkpoint number: ").strip()
+        try:
+            idx = int(choice) - 1
+            if idx == len(checkpoints):
+                return None
+            if 0 <= idx < len(checkpoints):
+                return checkpoints[idx]
+            print("Invalid selection. Try again.")
+        except ValueError:
+            print("Invalid input. Try again.")
+
+
+def resume() -> None:
+    """Resume training from a checkpoint."""
+    checkpoints = fetch_checkpoints()
+    checkpoint = select_checkpoint(checkpoints)
+
+    if checkpoint is None:
+        print("Resume cancelled.")
+        return
+
+    resume_run_name = checkpoint["run_name"]
+    config_name = checkpoint.get("config_name", "")
+
+    if not config_name:
+        print(f"Error: Checkpoint {resume_run_name} has no config_name in metadata.")
+        return
+
+    config_path = Path("config") / f"{config_name}.yaml"
+    if not config_path.exists():
+        print(f"Error: Config file {config_path} not found.")
+        return
+
+    timestamp = datetime.now().strftime("%b%d%H%M").lower()
+    new_run_name = f"{config_name}_{timestamp}_resumed"
+
+    print(f"\nResuming from: {resume_run_name}")
+    print(f"Config: {config_name}")
+    print(f"New run name: {new_run_name}")
+
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "--detach",
+            "-m",
+            "src.use_modal::train_model",
+            f"--run-name={new_run_name}",
+            f"--config-name={config_name}",
+            f"--resume-from={resume_run_name}",
+        ],
+        check=True,
+    )
+
+
 def bundle() -> None:
     """Bundle data splits into NPZ files on Modal."""
     print("\nStarting data bundling on Modal...")
@@ -126,17 +226,19 @@ def main(ctx: Context) -> None:
     print("  1. Bundle data")
     print("  2. Compute class weights")
     print("  3. Train model")
-    print("  4. Exit")
+    print("  4. Resume training")
+    print("  5. Exit")
 
     steps_map = {
         "1": bundle,
         "2": compute_class_weights,
         "3": train,
+        "4": resume,
     }
 
     choice = input("\nEnter your choice: ").strip()
 
-    if choice == "4":
+    if choice == "5":
         print("Exiting...")
         return
 

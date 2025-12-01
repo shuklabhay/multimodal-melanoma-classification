@@ -17,10 +17,13 @@ load_dotenv()
 from src.models.model_builder import DynamicModel, ModelConfig, build_model
 from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
 from src.utils.eval_utils import (
+    checkpoint_exists,
     compute_metrics,
-    load_best_locally,
+    get_checkpoint_dir,
+    load_checkpoint,
+    load_checkpoint_metadata,
     log_final_metrics,
-    save_best_locally,
+    save_checkpoint,
     upload_best_to_wandb,
 )
 
@@ -201,6 +204,7 @@ def eval_epoch(
 def train(
     run_name: str,
     config: ModelConfig,
+    config_name: str,
     num_epochs: int = 100,
     batch_size: int = 32,
     learning_rate: float = 1e-4,
@@ -211,12 +215,14 @@ def train(
     class_weights_path: str = "/root/assets/class_weights.npy",
     seed: int = 0,
     early_stopping_patience: int = 10,
+    resume_from: str | None = None,
 ) -> DynamicModel:
     """Full training loop with WandB tracking and early stopping.
 
     Args:
         run_name: Name for the WandB run.
         config: Model configuration dictionary.
+        config_name: Name of the config file (without .yaml extension).
         num_epochs: Maximum number of epochs to train.
         batch_size: Number of samples per batch.
         learning_rate: Learning rate for the Adam optimizer.
@@ -227,16 +233,39 @@ def train(
         class_weights_path: Path to class weights .npy file for weighted loss.
         seed: Random seed for reproducibility.
         early_stopping_patience: Number of epochs without improvement before stopping.
+        resume_from: Run name to resume from. If provided, loads checkpoint and
+            continues training from the saved epoch.
 
     Returns:
         The trained model.
     """
+    # Handle resume logic
+    start_epoch = 1
+    best_val_balanced_acc = 0.0
+    best_epoch = 0
+    resume_checkpoint_path = None
+
+    if resume_from:
+        if not checkpoint_exists(resume_from):
+            raise ValueError(f"Cannot resume: no checkpoint found for run '{resume_from}'")
+
+        resume_metadata = load_checkpoint_metadata(resume_from)
+        if resume_metadata:
+            start_epoch = resume_metadata["epoch"] + 1
+            best_val_balanced_acc = resume_metadata["val_accuracy"]
+            best_epoch = resume_metadata["epoch"]
+            resume_checkpoint_path = get_checkpoint_dir(resume_from)
+            print(f"Resuming from run '{resume_from}' at epoch {start_epoch}")
+            print(f"  Previous best val_accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})")
+
+    checkpoint_path = get_checkpoint_dir(run_name)
+
     wandb.init(
         project=os.environ["WANDB_PROJECT"],
         entity=os.environ["WANDB_ENTITY"],
         name=run_name,
         config={
-            "config_name": run_name.split("_", 2)[-1],
+            "config_name": config_name,
             **config,
             "learning_rate": learning_rate,
             "epochs": num_epochs,
@@ -244,6 +273,8 @@ def train(
             "num_classes": num_classes,
             "seed": seed,
             "early_stopping_patience": early_stopping_patience,
+            "checkpoint_volume_path": checkpoint_path,
+            "resumed_from": resume_from,
         },
     )
 
@@ -265,12 +296,15 @@ def train(
         seed=seed,
     )
 
-    best_val_balanced_acc = 0.0
-    best_epoch = 0
+    # Load checkpoint if resuming
+    if resume_from and resume_checkpoint_path:
+        print(f"Loading checkpoint from {resume_checkpoint_path}...")
+        load_checkpoint(model, resume_from)
+
     epochs_without_improvement = 0
 
     print("Starting training...")
-    for epoch in range(1, num_epochs + 1):
+    for epoch in range(start_epoch, num_epochs + 1):
         train_metrics = train_epoch(model, optimizer, train_ds, class_weights, epoch)
         val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
@@ -300,17 +334,18 @@ def train(
             best_epoch = epoch
             epochs_without_improvement = 0
             print(
-                f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f} "
-                f"(prev best epoch {best_epoch})"
+                f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f}"
             )
-            save_best_locally(
+            save_checkpoint(
                 model,
+                run_name,
                 epoch,
                 best_val_balanced_acc,
                 learning_rate,
                 batch_size,
                 num_classes,
                 seed,
+                config_name,
             )
         else:
             epochs_without_improvement += 1
@@ -328,7 +363,7 @@ def train(
     upload_best_to_wandb(run_name)
 
     print("Loading best model checkpoint...")
-    load_best_locally(model)
+    load_checkpoint(model, run_name)
 
     print("Running final val evaluation...")
     val_result = eval_epoch(model, val_ds, return_predictions=True)

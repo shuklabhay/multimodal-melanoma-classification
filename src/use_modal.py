@@ -96,6 +96,18 @@ def bundle_splits() -> None:
     preprocess_and_bundle_data()
 
 
+@app.function(timeout=60)
+def list_available_checkpoints() -> list[dict]:
+    """List all available checkpoints on the Modal volume.
+
+    Returns:
+        List of checkpoint metadata dicts.
+    """
+    from src.utils.eval_utils import list_checkpoints
+
+    return list_checkpoints()
+
+
 @app.function(
     gpu="L4",
     cpu=2,
@@ -111,12 +123,14 @@ def bundle_splits() -> None:
         modal.Secret.from_dotenv(),
     ],
 )
-def train_model(run_name: str, config_name: str):
+def train_model(run_name: str, config_name: str, resume_from: str | None = None):
     """Train the lesion classification model on Modal with WandB tracking.
 
     Args:
         run_name: Name for the WandB run.
         config_name: Name of the config file (without .yaml extension).
+        resume_from: Optional run name to resume training from. If provided,
+            loads the checkpoint from that run and continues training.
     """
     from src.models.model_builder import load_config
     from src.utils.train_utils import train
@@ -124,4 +138,4 @@ def train_model(run_name: str, config_name: str):
     config_path = f"/root/config/{config_name}.yaml"
     config = load_config(config_path)
 
-    train(run_name=run_name, config=config)
+    train(run_name=run_name, config=config, config_name=config_name, resume_from=resume_from)
