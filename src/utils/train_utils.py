@@ -56,8 +56,9 @@ def train_step(
     images: jax.Array,
     embeddings: jax.Array,
     labels: jax.Array,
+    class_weights: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
-    """Performs a single training step.
+    """Performs a single training step with weighted loss.
 
     Args:
         model: The model to train.
@@ -65,6 +66,7 @@ def train_step(
         images: Batch of input images.
         embeddings: Batch of text embeddings.
         labels: Batch of integer labels.
+        class_weights: Array of per-class weights for the loss function.
 
     Returns:
         A tuple containing the loss and logits for the batch.
@@ -72,9 +74,11 @@ def train_step(
 
     def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
         logits = model(images=images, embeddings=embeddings, train=True)
-        loss = jnp.mean(
-            optax.softmax_cross_entropy_with_integer_labels(logits, labels)
+        per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
+            logits, labels
         )
+        sample_weights = class_weights[labels]
+        loss = jnp.mean(per_sample_loss * sample_weights)
         return loss, logits
 
     (loss, logits), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model)
@@ -109,6 +113,7 @@ def train_epoch(
     model: nnx.Module,
     optimizer: nnx.Optimizer,
     train_ds: tf.data.Dataset,
+    class_weights: jax.Array,
     epoch: int,
 ) -> dict[str, float]:
     """Trains the model for one epoch.
@@ -117,6 +122,7 @@ def train_epoch(
         model: The model to train.
         optimizer: The nnx.Optimizer for updating model parameters.
         train_ds: The training dataset.
+        class_weights: Array of per-class weights for the loss function.
         epoch: The current epoch number (for progress bar display).
 
     Returns:
@@ -139,7 +145,9 @@ def train_epoch(
         embeddings_jax = jnp.array(embeddings)
         labels_jax = jnp.array(labels)
 
-        loss, logits = train_step(model, optimizer, images_jax, embeddings_jax, labels_jax)
+        loss, logits = train_step(
+            model, optimizer, images_jax, embeddings_jax, labels_jax, class_weights
+        )
         all_logits.append(logits)
         all_labels.append(labels_jax)
         all_losses.append(float(loss))
@@ -216,7 +224,7 @@ def train(
         train_bundle: Path to the training data bundle NPZ.
         val_bundle: Path to the validation data bundle NPZ.
         test_bundle: Path to the test data bundle NPZ.
-        class_weights_path: Path to class weights .npy file for oversampling.
+        class_weights_path: Path to class weights .npy file for weighted loss.
         seed: Random seed for reproducibility.
         early_stopping_patience: Number of epochs without improvement before stopping.
 
@@ -239,13 +247,14 @@ def train(
         },
     )
 
+    print("Loading class weights...")
+    class_weights = jnp.array(np.load(class_weights_path))
+
     print("Loading datasets...")
     train_ds, val_ds = get_dataloaders(
         train_bundle=train_bundle,
         val_bundle=val_bundle,
         batch_size=batch_size,
-        class_weights_path=class_weights_path,
-        seed=seed,
     )
 
     print("Creating model and optimizer...")
@@ -262,7 +271,7 @@ def train(
 
     print("Starting training...")
     for epoch in range(1, num_epochs + 1):
-        train_metrics = train_epoch(model, optimizer, train_ds, epoch)
+        train_metrics = train_epoch(model, optimizer, train_ds, class_weights, epoch)
         val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
         wandb.log(

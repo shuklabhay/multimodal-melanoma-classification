@@ -78,16 +78,14 @@ def isic_augment(image: tf.Tensor) -> tf.Tensor:
 def create_tf_dataset_from_bundle(
     bundle_path: str,
     batch_size: int,
-    class_weights: np.ndarray | None = None,
-    seed: int = 0,
+    augment: bool = False,
 ) -> tf.data.Dataset:
     """Creates a TensorFlow dataset from a preprocessed NPZ bundle.
 
     Args:
         bundle_path: Path to the NPZ bundle file.
         batch_size: Batch size for the dataset.
-        class_weights: If provided, applies augmentation and weighted sampling (training).
-        seed: Random seed for reproducibility.
+        augment: If True, applies augmentation (for training).
 
     Returns:
         A tf.data.Dataset yielding ((image, embedding), label) tuples.
@@ -99,23 +97,6 @@ def create_tf_dataset_from_bundle(
     labels = bundle["labels"]
     print(f"✓ Loaded {len(labels)} samples from bundle")
 
-    if class_weights is not None:
-        print("Applying weighted random sampling (oversampling)...")
-        num_samples = len(labels)
-
-        sample_weights = np.array([class_weights[label] for label in labels])
-        sample_probs = sample_weights / sample_weights.sum()
-
-        rng = np.random.default_rng(seed=seed)
-        indices = rng.choice(
-            num_samples, size=num_samples, p=sample_probs, replace=True
-        )
-
-        images = images[indices]
-        embeddings = embeddings[indices]
-        labels = labels[indices]
-        print(f"✓ Resampled dataset. New class distribution: {np.bincount(labels)}")
-
     mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
     std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
@@ -124,7 +105,7 @@ def create_tf_dataset_from_bundle(
     ) -> tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
         image = tf.divide(tf.cast(image, tf.float32), 255.0)
 
-        if class_weights is not None:
+        if augment:
             image = isic_augment(image)
         else:
             image = cast(tf.Tensor, tf.image.resize_with_crop_or_pad(image, 224, 224))
@@ -146,8 +127,6 @@ def get_dataloaders(
     train_bundle: str,
     val_bundle: str,
     batch_size: int,
-    class_weights_path: str,
-    seed: int = 0,
 ) -> tuple[tf.data.Dataset, tf.data.Dataset]:
     """Creates train and validation dataloaders from bundled NPZ files.
 
@@ -155,19 +134,14 @@ def get_dataloaders(
         train_bundle: Path to training bundle NPZ.
         val_bundle: Path to validation bundle NPZ.
         batch_size: Batch size for all datasets.
-        class_weights_path: Path to .npy file with class weights for oversampling.
-        seed: Random seed for reproducibility.
 
     Returns:
         Tuple of (train_dataset, val_dataset).
     """
-    weights = np.load(class_weights_path)
-
     train_ds = create_tf_dataset_from_bundle(
         train_bundle,
         batch_size=batch_size,
-        class_weights=weights,
-        seed=seed,
+        augment=True,
     )
     val_ds = create_tf_dataset_from_bundle(val_bundle, batch_size=batch_size)
 
