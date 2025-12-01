@@ -110,6 +110,25 @@ def list_available_checkpoints() -> list[dict]:
 
 @app.function(
     gpu="L4",
+    timeout=86400,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+            }
+        ),
+    ],
+)
+def generate_test_tsne() -> None:
+    """Generate t-SNE visualization for test set embeddings."""
+    from src.pipelines.analysis import generate_test_tsne
+
+    generate_test_tsne()
+
+
+@app.function(
+    gpu="L4",
     cpu=2,
     memory=24576,
     timeout=86400,
