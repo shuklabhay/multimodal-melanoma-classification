@@ -33,13 +33,13 @@ class DynamicModel(nnx.Module):
         text_enc = config["text_enc"]
         num_classifier_blocks = config["num_classifier_blocks"]
 
-        self.image_encoder = None
         classifier_input_dim: int
 
         if image_enc == "resnet50" and text_enc is None:
             self.image_encoder = ResNet50Backbone()
             classifier_input_dim = ENCODER_OUTPUT_DIMS["resnet50"]
         elif text_enc == "mpnet-base" and image_enc is None:
+            self.image_encoder = None
             classifier_input_dim = ENCODER_OUTPUT_DIMS["mpnet-base"]
         else:
             raise NotImplementedError("Fusion or invalid config combination")
