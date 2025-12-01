@@ -1,4 +1,4 @@
-import glob
+import os
 from typing import cast
 
 import jax
@@ -216,9 +216,12 @@ def compute_metrics(
     return metrics
 
 
-def upload_best_to_wandb(
+LOCAL_BEST_MODEL_PATH = "/tmp/best_model.safetensors"
+LOCAL_BEST_METADATA_PATH = "/tmp/best_model_metadata.txt"
+
+
+def save_best_locally(
     model: nnx.Module,
-    run_name: str,
     epoch: int,
     val_accuracy: float,
     learning_rate: float,
@@ -226,11 +229,10 @@ def upload_best_to_wandb(
     num_classes: int,
     seed: int,
 ) -> None:
-    """Save and upload best model as WandB artifact.
+    """Save best model locally, replacing any previous best.
 
     Args:
         model: The model to save.
-        run_name: Name of the training run.
         epoch: The current training epoch.
         val_accuracy: The validation accuracy achieved.
         learning_rate: The learning rate used for training.
@@ -238,42 +240,62 @@ def upload_best_to_wandb(
         num_classes: The number of output classes for the model.
         seed: The random seed used for model initialization.
     """
-    local_path = f"{run_name}_best.safetensors"
-    _, params, _ = nnx.split(model, nnx.Param, ...)
+    if os.path.exists(LOCAL_BEST_MODEL_PATH):
+        os.remove(LOCAL_BEST_MODEL_PATH)
+    if os.path.exists(LOCAL_BEST_METADATA_PATH):
+        os.remove(LOCAL_BEST_METADATA_PATH)
 
+    _, params, _ = nnx.split(model, nnx.Param, ...)
     flat_params = traverse_util.flatten_dict(nnx.to_pure_dict(params), sep=".")
     flat_params = cast(dict[str, jax.Array], flat_params)
-    save_file(flat_params, local_path)
+    save_file(flat_params, LOCAL_BEST_MODEL_PATH)
+
+    with open(LOCAL_BEST_METADATA_PATH, "w") as f:
+        f.write(f"epoch={epoch}\n")
+        f.write(f"val_accuracy={val_accuracy}\n")
+        f.write(f"learning_rate={learning_rate}\n")
+        f.write(f"batch_size={batch_size}\n")
+        f.write(f"num_classes={num_classes}\n")
+        f.write(f"seed={seed}\n")
+
+
+def upload_best_to_wandb(run_name: str) -> None:
+    """Upload the final best model from local storage to WandB artifact.
+
+    Args:
+        run_name: Name of the training run.
+    """
+    if not os.path.exists(LOCAL_BEST_MODEL_PATH):
+        print("Warning: No local best model found to upload")
+        return
+
+    metadata = {"run_name": run_name}
+    with open(LOCAL_BEST_METADATA_PATH) as f:
+        for line in f:
+            key, value = line.strip().split("=")
+            if key in ("epoch", "batch_size", "num_classes", "seed"):
+                metadata[key] = int(value)
+            else:
+                metadata[key] = float(value)
 
     artifact = wandb.Artifact(
-        name="best-model",
+        name=f"{run_name}_final_model",
         type="model",
-        metadata={
-            "epoch": epoch,
-            "val_accuracy": val_accuracy,
-            "learning_rate": learning_rate,
-            "batch_size": batch_size,
-            "num_classes": num_classes,
-            "seed": seed,
-        },
+        metadata=metadata,
     )
-    artifact.add_file(local_path)
+    artifact.add_file(LOCAL_BEST_MODEL_PATH, name=f"{run_name}_best.safetensors")
     wandb.log_artifact(artifact)
+    print(f"Uploaded final best model artifact: {run_name}_final_model")
 
 
-def load_best_from_wandb(model: nnx.Module) -> None:
-    """Load best model parameters from WandB artifact.
+def load_best_locally(model: nnx.Module) -> None:
+    """Load best model parameters from local storage.
 
     Args:
         model: The model to load parameters into (modified in place).
     """
-
-    artifact = wandb.use_artifact("best-model:latest")
-    print(f"Loading {artifact.name} (version {artifact.version})")
-    artifact_dir = artifact.download()
-    safetensor_files = glob.glob(f"{artifact_dir}/*.safetensors")
-    safetensor_path = safetensor_files[0]
-    flat_params = load_file(safetensor_path)
+    print(f"Loading best model from {LOCAL_BEST_MODEL_PATH}")
+    flat_params = load_file(LOCAL_BEST_MODEL_PATH)
 
     _, params, _ = nnx.split(model, nnx.Param, ...)
     params_dict = nnx.to_pure_dict(params)

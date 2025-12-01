@@ -18,8 +18,9 @@ from src.models.model_builder import DynamicModel, ModelConfig, build_model
 from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
 from src.utils.eval_utils import (
     compute_metrics,
-    load_best_from_wandb,
+    load_best_locally,
     log_final_metrics,
+    save_best_locally,
     upload_best_to_wandb,
 )
 
@@ -293,9 +294,8 @@ def train(
                 f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f} "
                 f"(prev best epoch {best_epoch})"
             )
-            upload_best_to_wandb(
+            save_best_locally(
                 model,
-                run_name,
                 epoch,
                 best_val_balanced_acc,
                 learning_rate,
@@ -315,8 +315,11 @@ def train(
     print("Unloading train dataset...")
     del train_ds
 
+    print("Uploading final best model to wandb...")
+    upload_best_to_wandb(run_name)
+
     print("Loading best model checkpoint...")
-    load_best_from_wandb(model)
+    load_best_locally(model)
 
     print("Running final val evaluation...")
     val_result = eval_epoch(model, val_ds, return_predictions=True)
