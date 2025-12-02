@@ -18,9 +18,6 @@ class FiLMClassifierDepth2(nnx.Module):
         self.fusion2 = ResidualFiLMFusionBlock(hidden_dim, text_dim, rngs)
         self.linear2 = nnx.Linear(hidden_dim, num_classes, rngs=rngs)
 
-        self.aux_image_head = nnx.Linear(image_dim, num_classes, rngs=rngs)
-        self.aux_text_head = nnx.Linear(text_dim, num_classes, rngs=rngs)
-
     def __call__(
         self, image_features: jnp.ndarray, text_features: jnp.ndarray
     ) -> jnp.ndarray:
@@ -29,12 +26,6 @@ class FiLMClassifierDepth2(nnx.Module):
         x = self.fusion2(x, text_features)
         x = self.linear2(x)
         return x
-
-    def forward_image_only(self, image_features: jnp.ndarray) -> jnp.ndarray:
-        return self.aux_image_head(image_features)
-
-    def forward_text_only(self, text_features: jnp.ndarray) -> jnp.ndarray:
-        return self.aux_text_head(text_features)
 
 
 class ClassifierDepth2(nnx.Module):

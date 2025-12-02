@@ -24,8 +24,6 @@ class ModelConfig(TypedDict, total=False):
     modality_dropout_normal: float
     modality_dropout_zero_text: float
     modality_dropout_swap_text: float
-    aux_image_loss_weight: float
-    aux_text_loss_weight: float
 
 
 class DynamicModel(nnx.Module):
@@ -89,8 +87,7 @@ class DynamicModel(nnx.Module):
         images: jnp.ndarray | None,
         embeddings: jnp.ndarray | None,
         train: bool = False,
-        return_aux: bool = False,
-    ) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray | None, jnp.ndarray | None]:
+    ) -> jnp.ndarray:
         image_enc = self.config.get("image_enc")
         text_enc = self.config.get("text_enc")
 
@@ -99,19 +96,13 @@ class DynamicModel(nnx.Module):
                 raise ValueError("Model configured for images but no images provided")
             assert isinstance(self.classifier, ClassifierDepth2)
             features = self.image_encoder(images, train=train)
-            logits = self.classifier(features)
-            if return_aux:
-                return logits, None, None
-            return logits
+            return self.classifier(features)
 
         elif text_enc is not None and image_enc is None:
             if embeddings is None:
                 raise ValueError("Model configured for text but no embeddings provided")
             assert isinstance(self.classifier, ClassifierDepth2)
-            logits = self.classifier(embeddings)
-            if return_aux:
-                return logits, None, None
-            return logits
+            return self.classifier(embeddings)
 
         elif image_enc is not None and text_enc is not None:
             if images is None:
@@ -120,12 +111,7 @@ class DynamicModel(nnx.Module):
                 raise ValueError("Fusion model requires text embeddings")
             assert isinstance(self.classifier, FiLMClassifierDepth2)
             image_features = self.image_encoder(images, train=train)
-            logits = self.classifier(image_features, embeddings)
-            if return_aux:
-                aux_image_logits = self.classifier.forward_image_only(image_features)
-                aux_text_logits = self.classifier.forward_text_only(embeddings)
-                return logits, aux_image_logits, aux_text_logits
-            return logits
+            return self.classifier(image_features, embeddings)
 
         else:
             raise NotImplementedError("Invalid config")

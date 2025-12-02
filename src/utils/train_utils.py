@@ -147,73 +147,6 @@ def train_step(
 
 
 @nnx.jit
-def train_step_with_aux(
-    model: nnx.Module,
-    optimizer: nnx.Optimizer,
-    images: jax.Array,
-    embeddings: jax.Array,
-    labels: jax.Array,
-    class_weights: jax.Array,
-    aux_image_weight: float,
-    aux_text_weight: float,
-) -> tuple[jax.Array, jax.Array]:
-    """Performs a single training step with auxiliary losses.
-
-    Args:
-        model: The model to train.
-        optimizer: The nnx.Optimizer for updating model parameters.
-        images: Batch of input images.
-        embeddings: Batch of text embeddings.
-        labels: Batch of integer labels.
-        class_weights: Array of per-class weights for the loss function.
-        aux_image_weight: Weight for the auxiliary image-only loss.
-        aux_text_weight: Weight for the auxiliary text-only loss.
-
-    Returns:
-        A tuple of (loss, logits).
-    """
-
-    def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
-        logits, aux_image_logits, aux_text_logits = model(
-            images=images, embeddings=embeddings, train=True, return_aux=True
-        )
-        per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
-            logits, labels
-        )
-        sample_weights = class_weights[labels]
-        main_loss = jnp.mean(per_sample_loss * sample_weights)
-
-        aux_image_loss = jnp.where(
-            aux_image_logits is not None,
-            jnp.mean(
-                optax.softmax_cross_entropy_with_integer_labels(
-                    aux_image_logits, labels
-                )
-                * sample_weights
-            ),
-            0.0,
-        )
-
-        aux_text_loss = jnp.where(
-            aux_text_logits is not None,
-            jnp.mean(
-                optax.softmax_cross_entropy_with_integer_labels(aux_text_logits, labels)
-                * sample_weights
-            ),
-            0.0,
-        )
-
-        total_loss = (
-            main_loss + aux_image_weight * aux_image_loss + aux_text_weight * aux_text_loss
-        )
-        return total_loss, logits
-
-    (loss, logits), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model)
-    optimizer.update(model, grads)
-    return loss, logits
-
-
-@nnx.jit
 def eval_step(
     model: nnx.Module,
     images: jax.Array,
@@ -265,10 +198,6 @@ def train_epoch(
         config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
     )
 
-    aux_image_weight = config.get("aux_image_loss_weight", 0.0) if config else 0.0
-    aux_text_weight = config.get("aux_text_loss_weight", 0.0) if config else 0.0
-    use_aux = aux_image_weight > 0.0 or aux_text_weight > 0.0
-
     if use_modality_dropout:
         seed_modality_dropout_rng(epoch)
 
@@ -290,26 +219,14 @@ def train_epoch(
         embeddings_jax = jnp.array(embeddings)
         labels_jax = jnp.array(labels)
 
-        if use_aux:
-            loss, logits = train_step_with_aux(
-                model,
-                optimizer,
-                images_jax,
-                embeddings_jax,
-                labels_jax,
-                class_weights,
-                aux_image_weight,
-                aux_text_weight,
-            )
-        else:
-            loss, logits = train_step(
-                model,
-                optimizer,
-                images_jax,
-                embeddings_jax,
-                labels_jax,
-                class_weights,
-            )
+        loss, logits = train_step(
+            model,
+            optimizer,
+            images_jax,
+            embeddings_jax,
+            labels_jax,
+            class_weights,
+        )
 
         all_losses.append(float(loss))
         all_logits.append(logits)
