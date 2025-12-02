@@ -43,12 +43,13 @@ def calculate_balanced_accuracy(
     for c in range(num_classes):
         mask = labels == c
         short = LABEL_CONFIG[c]["short"]
+        key = f"{c}{short}"
         if jnp.sum(mask) > 0:
             recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
             recalls.append(float(recall))
-            per_class_acc[short] = float(recall)
+            per_class_acc[key] = float(recall)
         else:
-            per_class_acc[short] = 0.0
+            per_class_acc[key] = 0.0
     balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
     return balanced_acc, per_class_acc
 
@@ -509,7 +510,7 @@ def log_final_metrics(
     }
     for k, v in test_metrics.items():
         if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
-            test_log_dict[f"test_classwise/{k}"] = v
+            test_log_dict[f"test_cw/{k}"] = v
     wandb.log(test_log_dict)
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")

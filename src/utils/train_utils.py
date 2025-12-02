@@ -331,7 +331,7 @@ def train(
         }
         for k, v in val_metrics.items():
             if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
-                log_dict[f"val_classwise/{k}"] = v
+                log_dict[f"val_cw/{k}"] = v
         wandb.log(log_dict)
 
         if val_metrics["balanced_accuracy"] > best_val_balanced_acc:
