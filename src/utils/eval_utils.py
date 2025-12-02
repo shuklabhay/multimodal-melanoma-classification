@@ -1,4 +1,4 @@
-import glob
+import os
 from typing import cast
 
 import jax
@@ -8,6 +8,8 @@ from flax import nnx, traverse_util
 from safetensors.flax import load_file, save_file
 
 from src.pipelines.label_config import LABEL_CONFIG
+
+CHECKPOINT_BASE_DIR = "/data/checkpoints"
 
 
 def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
@@ -26,7 +28,7 @@ def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
 
 def calculate_balanced_accuracy(
     logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int
-) -> float:
+) -> tuple[float, dict[str, float]]:
     """Calculate balanced accuracy (mean of per-class recalls).
 
     Args:
@@ -35,16 +37,23 @@ def calculate_balanced_accuracy(
         num_classes: Number of classes.
 
     Returns:
-        Balanced accuracy value.
+        Tuple of (balanced_accuracy, per_class_accuracy_dict).
     """
     predictions = jnp.argmax(logits, axis=-1)
+    per_class_acc = {}
     recalls = []
     for c in range(num_classes):
         mask = labels == c
+        short = LABEL_CONFIG[c]["short"]
+        key = f"{c}{short}"
         if jnp.sum(mask) > 0:
             recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
             recalls.append(float(recall))
-    return sum(recalls) / len(recalls) if recalls else 0.0
+            per_class_acc[key] = float(recall)
+        else:
+            per_class_acc[key] = 0.0
+    balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
+    return balanced_acc, per_class_acc
 
 
 def calculate_sensitivity_specificity(
@@ -122,6 +131,23 @@ def calculate_auroc(
     return macro_auroc, per_class_auroc
 
 
+def calculate_brier_score(logits: jnp.ndarray, labels: jnp.ndarray) -> float:
+    """Calculate Brier score (mean squared error of probabilities).
+
+    Args:
+        logits: Model output logits of shape (batch_size, num_classes).
+        labels: Integer labels of shape (batch_size,).
+
+    Returns:
+        Brier score (lower is better).
+    """
+    probs = jax.nn.softmax(logits, axis=-1)
+    num_classes = probs.shape[-1]
+    one_hot = jax.nn.one_hot(labels, num_classes)
+    brier = jnp.mean(jnp.sum((probs - one_hot) ** 2, axis=-1))
+    return float(brier)
+
+
 def calculate_ece(
     logits: jnp.ndarray, labels: jnp.ndarray, num_bins: int = 15
 ) -> float:
@@ -157,25 +183,11 @@ def calculate_ece(
     return float(ece)
 
 
-def calculate_brier_score(logits: jnp.ndarray, labels: jnp.ndarray) -> float:
-    """Calculate Brier score (mean squared error of probabilities).
-
-    Args:
-        logits: Model output logits of shape (batch_size, num_classes).
-        labels: Integer labels of shape (batch_size,).
-
-    Returns:
-        Brier score (lower is better).
-    """
-    probs = jax.nn.softmax(logits, axis=-1)
-    num_classes = probs.shape[-1]
-    one_hot = jax.nn.one_hot(labels, num_classes)
-    brier = jnp.mean(jnp.sum((probs - one_hot) ** 2, axis=-1))
-    return float(brier)
-
-
 def compute_metrics(
-    logits: jnp.ndarray, labels: jnp.ndarray, losses: list[float], num_classes: int = 8
+    logits: jnp.ndarray,
+    labels: jnp.ndarray,
+    losses: list[float],
+    num_classes: int = 8,
 ) -> dict[str, float]:
     """Compute evaluation metrics from logits, labels, and losses.
 
@@ -189,7 +201,9 @@ def compute_metrics(
         Dictionary containing computed metrics.
     """
     accuracy = float(calculate_accuracy(logits, labels))
-    balanced_accuracy = calculate_balanced_accuracy(logits, labels, num_classes)
+    balanced_accuracy, per_class_acc = calculate_balanced_accuracy(
+        logits, labels, num_classes
+    )
     loss = sum(losses) / len(losses)
 
     sensitivity, specificity = calculate_sensitivity_specificity(
@@ -213,10 +227,40 @@ def compute_metrics(
     for k, v in per_class_auroc.items():
         metrics[f"auroc_{k}"] = v
 
+    for k, v in per_class_acc.items():
+        metrics[f"bal_acc_{k}"] = v
+
     return metrics
 
 
-def upload_best_to_wandb(
+def get_checkpoint_dir(run_name: str) -> str:
+    """Get the checkpoint directory path for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Path to the checkpoint directory.
+    """
+    return os.path.join(CHECKPOINT_BASE_DIR, run_name)
+
+
+def get_checkpoint_paths(run_name: str) -> tuple[str, str]:
+    """Get paths for model and metadata files for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Tuple of (model_path, metadata_path).
+    """
+    checkpoint_dir = get_checkpoint_dir(run_name)
+    model_path = os.path.join(checkpoint_dir, "best_model.safetensors")
+    metadata_path = os.path.join(checkpoint_dir, "metadata.txt")
+    return model_path, metadata_path
+
+
+def save_checkpoint(
     model: nnx.Module,
     run_name: str,
     epoch: int,
@@ -225,8 +269,10 @@ def upload_best_to_wandb(
     batch_size: int,
     num_classes: int,
     seed: int,
-) -> None:
-    """Save and upload best model as WandB artifact.
+    config_name: str,
+    wandb_run_id: str,
+) -> str:
+    """Save model checkpoint to the Modal volume.
 
     Args:
         model: The model to save.
@@ -237,43 +283,91 @@ def upload_best_to_wandb(
         batch_size: The batch size used for training.
         num_classes: The number of output classes for the model.
         seed: The random seed used for model initialization.
-    """
-    local_path = f"{run_name}_best.safetensors"
-    _, params, _ = nnx.split(model, nnx.Param, ...)
+        config_name: Name of the config file used.
+        wandb_run_id: The WandB run ID for resuming logging.
 
+    Returns:
+        Path to the checkpoint directory.
+    """
+    checkpoint_dir = get_checkpoint_dir(run_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+
+    if os.path.exists(model_path):
+        os.remove(model_path)
+    if os.path.exists(metadata_path):
+        os.remove(metadata_path)
+
+    _, params, _ = nnx.split(model, nnx.Param, ...)
     flat_params = traverse_util.flatten_dict(nnx.to_pure_dict(params), sep=".")
     flat_params = cast(dict[str, jax.Array], flat_params)
-    save_file(flat_params, local_path)
+    save_file(flat_params, model_path)
+
+    with open(metadata_path, "w") as f:
+        f.write(f"run_name={run_name}\n")
+        f.write(f"epoch={epoch}\n")
+        f.write(f"val_accuracy={val_accuracy}\n")
+        f.write(f"learning_rate={learning_rate}\n")
+        f.write(f"batch_size={batch_size}\n")
+        f.write(f"num_classes={num_classes}\n")
+        f.write(f"seed={seed}\n")
+        f.write(f"config_name={config_name}\n")
+        f.write(f"checkpoint_path={checkpoint_dir}\n")
+        f.write(f"wandb_run_id={wandb_run_id}\n")
+
+    print(f"Saved checkpoint to {checkpoint_dir}")
+    return checkpoint_dir
+
+
+def upload_best_to_wandb(run_name: str) -> None:
+    """Upload the final best model from checkpoint directory to WandB artifact.
+
+    Args:
+        run_name: Name of the training run.
+    """
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+    checkpoint_dir = get_checkpoint_dir(run_name)
+
+    if not os.path.exists(model_path):
+        print(f"Warning: No checkpoint found at {model_path}")
+        return
+
+    metadata: dict[str, str | int | float] = {
+        "run_name": run_name,
+        "checkpoint_volume_path": checkpoint_dir,
+    }
+    with open(metadata_path) as f:
+        for line in f:
+            key, value = line.strip().split("=", 1)
+            if key in ("epoch", "batch_size", "num_classes", "seed"):
+                metadata[key] = int(value)
+            elif key in ("val_accuracy", "learning_rate"):
+                metadata[key] = float(value)
+            else:
+                metadata[key] = value
 
     artifact = wandb.Artifact(
-        name="best-model",
+        name=f"{run_name}_final_model",
         type="model",
-        metadata={
-            "epoch": epoch,
-            "val_accuracy": val_accuracy,
-            "learning_rate": learning_rate,
-            "batch_size": batch_size,
-            "num_classes": num_classes,
-            "seed": seed,
-        },
+        metadata=metadata,
     )
-    artifact.add_file(local_path)
+    artifact.add_file(model_path, name=f"{run_name}_best.safetensors")
     wandb.log_artifact(artifact)
+    print(f"Uploaded final best model artifact: {run_name}_final_model")
+    print(f"Checkpoint volume path: {checkpoint_dir}")
 
 
-def load_best_from_wandb(model: nnx.Module) -> None:
-    """Load best model parameters from WandB artifact.
+def load_checkpoint(model: nnx.Module, run_name: str) -> None:
+    """Load model parameters from checkpoint directory.
 
     Args:
         model: The model to load parameters into (modified in place).
+        run_name: Name of the training run to load checkpoint from.
     """
-
-    artifact = wandb.use_artifact("best-model:latest")
-    print(f"Loading {artifact.name} (version {artifact.version})")
-    artifact_dir = artifact.download()
-    safetensor_files = glob.glob(f"{artifact_dir}/*.safetensors")
-    safetensor_path = safetensor_files[0]
-    flat_params = load_file(safetensor_path)
+    model_path, _ = get_checkpoint_paths(run_name)
+    print(f"Loading checkpoint from {model_path}")
+    flat_params = load_file(model_path)
 
     _, params, _ = nnx.split(model, nnx.Param, ...)
     params_dict = nnx.to_pure_dict(params)
@@ -296,6 +390,67 @@ def load_best_from_wandb(model: nnx.Module) -> None:
 
     update_recursive(params, nested_updated)
     nnx.update(model, params)
+
+
+def load_checkpoint_metadata(run_name: str) -> dict | None:
+    """Load checkpoint metadata for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        Dictionary with checkpoint metadata, or None if not found.
+    """
+    _, metadata_path = get_checkpoint_paths(run_name)
+
+    if not os.path.exists(metadata_path):
+        return None
+
+    metadata = {}
+    with open(metadata_path) as f:
+        for line in f:
+            key, value = line.strip().split("=", 1)
+            if key in ("epoch", "batch_size", "num_classes", "seed"):
+                metadata[key] = int(value)
+            elif key in ("val_accuracy", "learning_rate"):
+                metadata[key] = float(value)
+            else:
+                metadata[key] = value
+
+    return metadata
+
+
+def checkpoint_exists(run_name: str) -> bool:
+    """Check if a checkpoint exists for a run.
+
+    Args:
+        run_name: Name of the training run.
+
+    Returns:
+        True if checkpoint exists, False otherwise.
+    """
+    model_path, metadata_path = get_checkpoint_paths(run_name)
+    return os.path.exists(model_path) and os.path.exists(metadata_path)
+
+
+def list_checkpoints() -> list[dict]:
+    """List all available checkpoints with their metadata.
+
+    Returns:
+        List of checkpoint metadata dicts, sorted by run name.
+    """
+    if not os.path.exists(CHECKPOINT_BASE_DIR):
+        return []
+
+    checkpoints = []
+    for run_dir in sorted(os.listdir(CHECKPOINT_BASE_DIR)):
+        run_name = run_dir
+        if checkpoint_exists(run_name):
+            metadata = load_checkpoint_metadata(run_name)
+            if metadata:
+                checkpoints.append(metadata)
+
+    return checkpoints
 
 
 def log_confusion_matrix(
@@ -328,8 +483,6 @@ def log_final_metrics(
     test_metrics: dict[str, float],
     test_logits: jnp.ndarray,
     test_labels: jnp.ndarray,
-    val_logits: jnp.ndarray,
-    val_labels: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
 
@@ -339,24 +492,23 @@ def log_final_metrics(
         test_metrics: Dictionary containing test set metrics.
         test_logits: Test set logits for confusion matrix.
         test_labels: Test set labels for confusion matrix.
-        val_logits: Val set logits for confusion matrix.
-        val_labels: Val set labels for confusion matrix.
     """
-    wandb.log(
-        {
-            "test/loss": test_metrics["loss"],
-            "test/accuracy": test_metrics["accuracy"],
-            "test/balanced_accuracy": test_metrics["balanced_accuracy"],
-            "test/sensitivity": test_metrics["sensitivity_mean"],
-            "test/specificity": test_metrics["specificity_mean"],
-            "test/auroc": test_metrics["auroc"],
-            "test/ece": test_metrics["ece"],
-            "test/brier": test_metrics["brier"],
-        }
-    )
+    test_log_dict = {
+        "test/loss": test_metrics["loss"],
+        "test/accuracy": test_metrics["accuracy"],
+        "test/balanced_accuracy": test_metrics["balanced_accuracy"],
+        "test/sensitivity": test_metrics["sensitivity_mean"],
+        "test/specificity": test_metrics["specificity_mean"],
+        "test/auroc": test_metrics["auroc"],
+        "test/ece": test_metrics["ece"],
+        "test/brier": test_metrics["brier"],
+    }
+    for k, v in test_metrics.items():
+        if k.startswith("bal_acc_"):
+            test_log_dict[f"test_cw/{k}"] = v
+    wandb.log(test_log_dict)
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
-    log_confusion_matrix(val_logits, val_labels, "Final Model Val Confusion Matrix")
 
     wandb.summary["best_val_balanced_accuracy"] = best_val_balanced_acc
     wandb.summary["best_epoch"] = best_epoch

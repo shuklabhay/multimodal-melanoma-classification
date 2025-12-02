@@ -1,8 +1,10 @@
 from typing import cast
 
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx
 from flax.core.frozen_dict import unfreeze
+from sentence_transformers import SentenceTransformer
 from transformers import FlaxResNetModel
 from transformers.modeling_flax_outputs import (
     FlaxBaseModelOutputWithPoolingAndNoAttention,
@@ -65,3 +67,33 @@ class ResNet50Backbone(nnx.Module):
 
         embedding = jnp.squeeze(embedding, axis=(-1, -2))
         return embedding
+
+
+class SentenceTransformerEncoder:
+    def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
+        """Initializes sentence transformer for text embedding generation.
+
+        Args:
+            model_name: Name of the sentence transformer model to use.
+        """
+        self.model: SentenceTransformer = SentenceTransformer(model_name)
+
+    def encode_batch(
+        self, texts: list[str], batch_size: int = 128, show_progress: bool = True
+    ) -> np.ndarray:
+        """Encodes texts into embeddings using batched processing.
+
+        Args:
+            texts: List of text strings to encode.
+            batch_size: Batch size for encoding.
+            show_progress: Whether to show progress bar.
+
+        Returns:
+            Numpy array of embeddings with shape (num_texts, embedding_dim).
+        """
+        return self.model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=show_progress,
+            convert_to_numpy=True,
+        )

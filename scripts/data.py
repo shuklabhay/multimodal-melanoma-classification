@@ -20,6 +20,7 @@ def run_all() -> None:
     process_images()
     generate_narrative_manifests()
     generate_narratives()
+    create_narrative_embeddings()
     create_combined_manifests()
 
 
@@ -119,43 +120,85 @@ def verify_narrative_manifests() -> None:
 
 
 @app.command()
+def create_narrative_embeddings() -> None:
+    """Creates narrative embeddings using sentence transformers on Modal T4 GPU."""
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::embeddings_entrypoint",
+        ],
+        check=True,
+    )
+
+    use_buffer(
+        {
+            "embedding_split_train.jsonl": "assets/manifests/embedding_split_train.jsonl",
+            "embedding_split_val.jsonl": "assets/manifests/embedding_split_val.jsonl",
+            "embedding_split_test.jsonl": "assets/manifests/embedding_split_test.jsonl",
+        }
+    )
+
+    print("\n✓ Narrative embeddings created!")
+
+
+@app.command()
 def create_combined_manifests() -> None:
-    """Creates combined manifests with image_path, text_path, and label from ISIC and narrative manifests."""
+    """Creates combined manifests with image_path, text_path, embedding_path, and label from ISIC, narrative, and embedding manifests."""
     manifests_dir = Path("assets/manifests")
 
     for split in ["train", "val", "test"]:
         isic_path = manifests_dir / f"isic_split_{split}.jsonl"
         narrative_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        embedding_path = manifests_dir / f"embedding_split_{split}.jsonl"
         combined_path = manifests_dir / f"split_{split}.jsonl"
 
         print(f"\nCreating combined manifest for {split}...")
 
-        with open(isic_path) as f_isic, open(narrative_path) as f_narrative:
+        with (
+            open(isic_path) as f_isic,
+            open(narrative_path) as f_narrative,
+            open(embedding_path) as f_embedding,
+        ):
             isic_lines = f_isic.readlines()
             narrative_lines = f_narrative.readlines()
+            embedding_lines = f_embedding.readlines()
 
-            if len(isic_lines) != len(narrative_lines):
+            if len(isic_lines) != len(narrative_lines) != len(embedding_lines):
                 raise ValueError(
                     f"Mismatched manifest lengths for {split}: "
-                    f"ISIC has {len(isic_lines)} items, narrative has {len(narrative_lines)} items"
+                    f"ISIC has {len(isic_lines)} items, "
+                    f"narrative has {len(narrative_lines)} items, "
+                    f"embedding has {len(embedding_lines)} items"
                 )
 
             combined_items = []
-            for idx, (isic_line, narrative_line) in enumerate(
-                zip(isic_lines, narrative_lines)
+            for idx, (isic_line, narrative_line, embedding_line) in enumerate(
+                zip(isic_lines, narrative_lines, embedding_lines)
             ):
                 isic_item = json.loads(isic_line)
                 narrative_item = json.loads(narrative_line)
+                embedding_item = json.loads(embedding_line)
 
-                if isic_item["label"] != narrative_item["label"]:
+                if (
+                    isic_item["label"]
+                    != narrative_item["label"]
+                    != embedding_item["label"]
+                ):
                     raise ValueError(
                         f"Label mismatch at line {idx + 1} in {split}: "
-                        f"ISIC label={isic_item['label']}, narrative label={narrative_item['label']}"
+                        f"ISIC label={isic_item['label']}, "
+                        f"narrative label={narrative_item['label']}, "
+                        f"embedding label={embedding_item['label']}"
                     )
 
                 combined_item = {
                     "image_path": isic_item["image_path"],
                     "text_path": narrative_item["text_path"],
+                    "embedding_path": embedding_item["embedding_path"],
                     "age_approx": isic_item["age_approx"],
                     "sex": isic_item["sex"],
                     "anatom_site_general": isic_item["anatom_site_general"],
@@ -186,9 +229,10 @@ def main(ctx: Context) -> None:
     print("  3. Create image manifests")
     print("  4. Generate narrative manifests")
     print("  5. Generate narratives")
-    print("  6. Create combined manifests")
-    print("  7. Run all")
-    print("  8. Exit")
+    print("  6. Create narrative embeddings")
+    print("  7. Create combined manifests")
+    print("  8. Run all")
+    print("  9. Exit")
     choice = input("\nEnter your choice: ").strip().lower()
 
     steps_map = {
@@ -197,27 +241,16 @@ def main(ctx: Context) -> None:
         "3": process_images,
         "4": generate_narrative_manifests,
         "5": generate_narratives,
-        "6": create_combined_manifests,
-        "7": run_all,
+        "6": create_narrative_embeddings,
+        "7": create_combined_manifests,
+        "8": run_all,
     }
 
-    if choice == "8":
+    if choice == "9":
         print("Exiting...")
         return
 
-    if "," in choice:
-        selected_steps = [s.strip() for s in choice.split(",")]
-        invalid_steps = [s for s in selected_steps if s not in steps_map]
-
-        if invalid_steps:
-            print(f"Invalid step(s): {', '.join(invalid_steps)}. Please use 1-8.")
-            return
-
-        print(f"\nRunning steps: {', '.join(selected_steps)}\n")
-        for step_num in selected_steps:
-            print(f"Running step {step_num}...")
-            steps_map[step_num]()
-    elif choice in steps_map:
+    if choice in steps_map:
         steps_map[choice]()
     else:
         print("Invalid choice. Please run the script again.")

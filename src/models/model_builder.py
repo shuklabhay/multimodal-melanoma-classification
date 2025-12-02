@@ -5,7 +5,10 @@ import yaml
 from flax import nnx
 
 from src.models.backbones import ResNet50Backbone
-from src.models.classifiers import ClassifierDepth2, ClassifierDepth4
+from src.models.classifiers import (
+    ClassifierDepth2,
+    FiLMClassifierDepth2,
+)
 
 ENCODER_OUTPUT_DIMS = {
     "resnet50": 2048,
@@ -13,11 +16,14 @@ ENCODER_OUTPUT_DIMS = {
 }
 
 
-class ModelConfig(TypedDict):
+class ModelConfig(TypedDict, total=False):
     image_enc: str | None
     text_enc: str | None
     fusion_type: str
-    num_classifier_blocks: int
+    classifier: str
+    modality_dropout_normal: float
+    modality_dropout_zero_text: float
+    modality_dropout_swap_text: float
 
 
 class DynamicModel(nnx.Module):
@@ -29,31 +35,88 @@ class DynamicModel(nnx.Module):
     ):
         self.config = config
 
-        image_enc = config["image_enc"]
-        text_enc = config["text_enc"]
-        fusion_type = config["fusion_type"]
-        num_classifier_blocks = config["num_classifier_blocks"]
+        image_enc = config.get("image_enc")
+        text_enc = config.get("text_enc")
+        fusion_type = config.get("fusion_type", "none")
+        classifier_name = config.get("classifier")
 
-        image_enc_dim: int
-        if image_enc == "resnet50":
+        if image_enc == "resnet50" and text_enc is None:
             self.image_encoder = ResNet50Backbone()
-            image_enc_dim = ENCODER_OUTPUT_DIMS["resnet50"]
+            if classifier_name == "ClassifierDepth2":
+                self.classifier = ClassifierDepth2(
+                    input_dim=ENCODER_OUTPUT_DIMS["resnet50"],
+                    num_classes=num_classes,
+                    rngs=rngs,
+                )
+            else:
+                raise ValueError(f"Unsupported classifier: {classifier_name}")
 
-        if num_classifier_blocks == 2:
-            self.classifier = ClassifierDepth2(
-                image_enc_dim=image_enc_dim,
-                num_classes=num_classes,
-                rngs=rngs,
+        elif text_enc == "mpnet-base" and image_enc is None:
+            if classifier_name == "ClassifierDepth2":
+                self.classifier = ClassifierDepth2(
+                    input_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
+                    num_classes=num_classes,
+                    rngs=rngs,
+                )
+            else:
+                raise ValueError(f"Unsupported classifier: {classifier_name}")
+
+        elif (
+            image_enc == "resnet50"
+            and text_enc == "mpnet-base"
+            and fusion_type == "film"
+        ):
+            self.image_encoder = ResNet50Backbone()
+            if classifier_name == "FiLMClassifierDepth2":
+                self.classifier = FiLMClassifierDepth2(
+                    image_dim=ENCODER_OUTPUT_DIMS["resnet50"],
+                    text_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
+                    num_classes=num_classes,
+                    rngs=rngs,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported classifier for fusion: {classifier_name}"
+                )
+
+        else:
+            raise NotImplementedError(
+                f"Unsupported config: image_enc={image_enc}, text_enc={text_enc}, fusion_type={fusion_type}"
             )
 
-    def __call__(self, images: jnp.ndarray, train: bool = False) -> jnp.ndarray:
-        if self.image_encoder is not None:
-            features = self.image_encoder(images, train=train)
-        else:
-            raise NotImplementedError("Text-only model not yet implemented")
+    def __call__(
+        self,
+        images: jnp.ndarray | None,
+        embeddings: jnp.ndarray | None,
+        train: bool = False,
+    ) -> jnp.ndarray:
+        image_enc = self.config.get("image_enc")
+        text_enc = self.config.get("text_enc")
 
-        logits = self.classifier(features)
-        return logits
+        if image_enc is not None and text_enc is None:
+            if images is None:
+                raise ValueError("Model configured for images but no images provided")
+            assert isinstance(self.classifier, ClassifierDepth2)
+            features = self.image_encoder(images, train=train)
+            return self.classifier(features)
+
+        elif text_enc is not None and image_enc is None:
+            if embeddings is None:
+                raise ValueError("Model configured for text but no embeddings provided")
+            assert isinstance(self.classifier, ClassifierDepth2)
+            return self.classifier(embeddings)
+
+        elif image_enc is not None and text_enc is not None:
+            if images is None:
+                raise ValueError("Fusion model requires images")
+            if embeddings is None:
+                raise ValueError("Fusion model requires text embeddings")
+            assert isinstance(self.classifier, FiLMClassifierDepth2)
+            image_features = self.image_encoder(images, train=train)
+            return self.classifier(image_features, embeddings)
+
+        else:
+            raise NotImplementedError("Invalid config")
 
 
 def load_config(config_path: str) -> ModelConfig:
