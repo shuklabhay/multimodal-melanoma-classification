@@ -53,9 +53,7 @@ def preprocess_images_for_resnet(images: np.ndarray) -> np.ndarray:
     return np.array(processed, dtype=np.float32)
 
 
-def extract_resnet_embeddings(
-    images: np.ndarray, batch_size: int = 32
-) -> np.ndarray:
+def extract_resnet_embeddings(images: np.ndarray, batch_size: int = 32) -> np.ndarray:
     """Extract ResNet50 embeddings from preprocessed images.
 
     Args:

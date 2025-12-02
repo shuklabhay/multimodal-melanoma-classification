@@ -75,7 +75,9 @@ class DynamicModel(nnx.Module):
                     rngs=rngs,
                 )
             else:
-                raise ValueError(f"Unsupported classifier for fusion: {classifier_name}")
+                raise ValueError(
+                    f"Unsupported classifier for fusion: {classifier_name}"
+                )
 
         else:
             raise NotImplementedError(
