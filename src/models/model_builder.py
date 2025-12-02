@@ -24,9 +24,6 @@ class ModelConfig(TypedDict, total=False):
 
 
 class DynamicModel(nnx.Module):
-    image_encoder: ResNet50Backbone | None
-    classifier: ClassifierDepth2 | FiLMClassifierDepth2
-
     def __init__(
         self,
         config: ModelConfig,
@@ -39,8 +36,6 @@ class DynamicModel(nnx.Module):
         text_enc = config.get("text_enc")
         fusion_type = config.get("fusion_type", "none")
         num_classifier_blocks = config.get("num_classifier_blocks", 2)
-
-        self.image_encoder = None
 
         if image_enc == "resnet50" and text_enc is None:
             self.image_encoder = ResNet50Backbone()
@@ -102,7 +97,6 @@ class DynamicModel(nnx.Module):
         if image_enc is not None and text_enc is None:
             if images is None:
                 raise ValueError("Model configured for images but no images provided")
-            assert self.image_encoder is not None
             assert isinstance(self.classifier, ClassifierDepth2)
             features = self.image_encoder(images, train=train)
             return self.classifier(features)
@@ -118,7 +112,6 @@ class DynamicModel(nnx.Module):
                 raise ValueError("Fusion model requires images")
             if embeddings is None:
                 raise ValueError("Fusion model requires text embeddings")
-            assert self.image_encoder is not None
             assert isinstance(self.classifier, FiLMClassifierDepth2)
             image_features = self.image_encoder(images, train=train)
             return self.classifier(image_features, embeddings)
