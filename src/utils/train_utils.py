@@ -331,7 +331,7 @@ def train(
         }
         for k, v in val_metrics.items():
             if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
-                log_dict[f"val/{k}"] = v
+                log_dict[f"val_classwise/{k}"] = v
         wandb.log(log_dict)
 
         if val_metrics["balanced_accuracy"] > best_val_balanced_acc:
@@ -370,13 +370,6 @@ def train(
     print("Loading best model checkpoint...")
     load_checkpoint(model, run_name)
 
-    print("Running final val evaluation...")
-    val_result = eval_epoch(
-        model, val_ds, return_predictions=True, class_weights=class_weights
-    )
-    val_metrics, val_logits, val_labels = cast(
-        tuple[dict[str, float], jnp.ndarray, jnp.ndarray], val_result
-    )
     del val_ds
 
     print("Loading test dataset...")
@@ -396,8 +389,6 @@ def train(
         test_metrics,
         test_logits,
         test_labels,
-        val_logits,
-        val_labels,
         class_weights,
     )
 

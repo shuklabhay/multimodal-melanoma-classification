@@ -485,8 +485,6 @@ def log_final_metrics(
     test_metrics: dict[str, float],
     test_logits: jnp.ndarray,
     test_labels: jnp.ndarray,
-    val_logits: jnp.ndarray,
-    val_labels: jnp.ndarray,
     class_weights: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
@@ -497,8 +495,6 @@ def log_final_metrics(
         test_metrics: Dictionary containing test set metrics.
         test_logits: Test set logits for confusion matrix.
         test_labels: Test set labels for confusion matrix.
-        val_logits: Val set logits for confusion matrix.
-        val_labels: Val set labels for confusion matrix.
         class_weights: Array of per-class weights for logit adjustment.
     """
     test_log_dict = {
@@ -513,7 +509,7 @@ def log_final_metrics(
     }
     for k, v in test_metrics.items():
         if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
-            test_log_dict[f"test/{k}"] = v
+            test_log_dict[f"test_classwise/{k}"] = v
     wandb.log(test_log_dict)
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
