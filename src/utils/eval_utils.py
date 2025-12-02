@@ -45,9 +45,9 @@ def calculate_balanced_accuracy(
         if jnp.sum(mask) > 0:
             recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
             recalls.append(float(recall))
-            per_class_acc[f"class_{c}"] = float(recall)
+            per_class_acc[f"class{c}"] = float(recall)
         else:
-            per_class_acc[f"class_{c}"] = 0.0
+            per_class_acc[f"class{c}"] = 0.0
     balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
     return balanced_acc, per_class_acc
 
@@ -57,7 +57,7 @@ def calculate_balanced_accuracy_logit_adjusted(
     labels: jnp.ndarray,
     class_weights: jnp.ndarray,
     num_classes: int,
-) -> tuple[float, dict[str, float]]:
+) -> float:
     """Calculate balanced accuracy with logit adjustment.
 
     Args:
@@ -67,22 +67,17 @@ def calculate_balanced_accuracy_logit_adjusted(
         num_classes: Number of classes.
 
     Returns:
-        Tuple of (balanced_accuracy_logit_adjusted, per_class_accuracy_dict).
+        Balanced accuracy with logit adjustment.
     """
     adjusted_logits = logits + jnp.log(class_weights)
     predictions = jnp.argmax(adjusted_logits, axis=-1)
-    per_class_acc = {}
     recalls = []
     for c in range(num_classes):
         mask = labels == c
         if jnp.sum(mask) > 0:
             recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
             recalls.append(float(recall))
-            per_class_acc[f"class_{c}"] = float(recall)
-        else:
-            per_class_acc[f"class_{c}"] = 0.0
-    balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
-    return balanced_acc, per_class_acc
+    return sum(recalls) / len(recalls) if recalls else 0.0
 
 
 def calculate_sensitivity_specificity(
@@ -259,12 +254,10 @@ def compute_metrics(
         metrics[f"auroc_{k}"] = v
 
     if class_weights is not None:
-        bal_acc_adj, per_class_acc_adj = calculate_balanced_accuracy_logit_adjusted(
+        bal_acc_adj = calculate_balanced_accuracy_logit_adjusted(
             logits, labels, class_weights, num_classes
         )
         metrics["bal_acc_logit_adj"] = bal_acc_adj
-        for k, v in per_class_acc_adj.items():
-            metrics[f"bal_acc_logit_adj_{k}"] = v
 
     for k, v in per_class_acc.items():
         metrics[f"bal_acc_{k}"] = v
@@ -556,10 +549,7 @@ def log_final_metrics(
         "test/bal_acc_logit_adj": test_metrics["bal_acc_logit_adj"],
     }
     for k, v in test_metrics.items():
-        if k.startswith("bal_acc_logit_adj_class_"):
-            test_log_dict[f"test/{k}"] = v
-    for k, v in test_metrics.items():
-        if k.startswith("bal_acc_class_"):
+        if k.startswith("bal_acc_class"):
             test_log_dict[f"test/{k}"] = v
     wandb.log(test_log_dict)
 

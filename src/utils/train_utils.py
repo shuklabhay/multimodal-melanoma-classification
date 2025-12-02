@@ -332,10 +332,7 @@ def train(
             "val/bal_acc_logit_adj": val_metrics["bal_acc_logit_adj"],
         }
         for k, v in val_metrics.items():
-            if k.startswith("bal_acc_logit_adj_class_"):
-                log_dict[f"val/{k}"] = v
-        for k, v in val_metrics.items():
-            if k.startswith("bal_acc_class_"):
+            if k.startswith("bal_acc_class"):
                 log_dict[f"val/{k}"] = v
         wandb.log(log_dict)
 

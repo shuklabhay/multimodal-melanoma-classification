@@ -122,7 +122,7 @@ def list_available_checkpoints() -> list[dict]:
 )
 def generate_test_tsne() -> None:
     """Generate t-SNE visualization for test set embeddings."""
-    from src.pipelines.analysis import generate_test_tsne
+    from src.pipelines.prep_analysis import generate_test_tsne
 
     generate_test_tsne()
 
@@ -157,4 +157,9 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
     config_path = f"/root/config/{config_name}.yaml"
     config = load_config(config_path)
 
-    train(run_name=run_name, config=config, config_name=config_name, resume_from=resume_from)
+    train(
+        run_name=run_name,
+        config=config,
+        config_name=config_name,
+        resume_from=resume_from,
+    )
