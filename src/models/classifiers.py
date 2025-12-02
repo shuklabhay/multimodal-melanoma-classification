@@ -14,10 +14,8 @@ class FiLMClassifierDepth2(nnx.Module):
         hidden_dim: int = 1024,
     ):
         self.fusion1 = ResidualFiLMFusionBlock(image_dim, text_dim, rngs)
-        self.ln1 = nnx.LayerNorm(image_dim, rngs=rngs)
         self.linear1 = nnx.Linear(image_dim, hidden_dim, rngs=rngs)
         self.fusion2 = ResidualFiLMFusionBlock(hidden_dim, text_dim, rngs)
-        self.ln2 = nnx.LayerNorm(hidden_dim, rngs=rngs)
         self.linear2 = nnx.Linear(hidden_dim, num_classes, rngs=rngs)
 
         self.aux_image_head = nnx.Linear(image_dim, num_classes, rngs=rngs)
@@ -27,10 +25,8 @@ class FiLMClassifierDepth2(nnx.Module):
         self, image_features: jnp.ndarray, text_features: jnp.ndarray
     ) -> jnp.ndarray:
         x = self.fusion1(image_features, text_features)
-        x = self.ln1(x)
         x = nnx.relu(self.linear1(x))
         x = self.fusion2(x, text_features)
-        x = self.ln2(x)
         x = self.linear2(x)
         return x
 
