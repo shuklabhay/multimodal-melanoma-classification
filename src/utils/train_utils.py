@@ -166,7 +166,6 @@ def eval_epoch(
     model: nnx.Module,
     ds: tf.data.Dataset,
     return_predictions: bool = False,
-    class_weights: jax.Array | None = None,
 ) -> dict[str, float] | tuple[dict[str, float], jnp.ndarray, jnp.ndarray]:
     """Evaluates the model on a dataset.
 
@@ -174,7 +173,6 @@ def eval_epoch(
         model: The model to evaluate.
         ds: The dataset to evaluate on.
         return_predictions: If True, also return logits and labels.
-        class_weights: Optional array of per-class weights for logit adjustment metrics.
 
     Returns:
         A dictionary containing evaluation metrics, or tuple of (metrics, logits, labels).
@@ -196,7 +194,7 @@ def eval_epoch(
 
     all_logits = jnp.concatenate(all_logits)
     all_labels = jnp.concatenate(all_labels)
-    metrics = compute_metrics(all_logits, all_labels, all_losses, class_weights=class_weights)
+    metrics = compute_metrics(all_logits, all_labels, all_losses)
 
     if return_predictions:
         return metrics, all_logits, all_labels
@@ -308,9 +306,7 @@ def train(
     print("Starting training...")
     for epoch in range(start_epoch, num_epochs + 1):
         train_metrics = train_epoch(model, optimizer, train_ds, class_weights, epoch)
-        val_metrics = cast(
-            dict[str, float], eval_epoch(model, val_ds, class_weights=class_weights)
-        )
+        val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
         log_dict = {
             "train/loss": train_metrics["loss"],
@@ -319,6 +315,7 @@ def train(
             "train/sensitivity": train_metrics["sensitivity_mean"],
             "train/specificity": train_metrics["specificity_mean"],
             "train/auroc": train_metrics["auroc"],
+            "train/ece": train_metrics["ece"],
             "train/brier": train_metrics["brier"],
             "val/loss": val_metrics["loss"],
             "val/accuracy": val_metrics["accuracy"],
@@ -326,11 +323,11 @@ def train(
             "val/sensitivity": val_metrics["sensitivity_mean"],
             "val/specificity": val_metrics["specificity_mean"],
             "val/auroc": val_metrics["auroc"],
+            "val/ece": val_metrics["ece"],
             "val/brier": val_metrics["brier"],
-            "val/bal_acc_logit_adj": val_metrics["bal_acc_logit_adj"],
         }
         for k, v in val_metrics.items():
-            if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
+            if k.startswith("bal_acc_"):
                 log_dict[f"val_cw/{k}"] = v
         wandb.log(log_dict)
 
@@ -376,9 +373,7 @@ def train(
     test_ds = create_tf_dataset_from_bundle(test_bundle, batch_size=batch_size)
 
     print("Running test evaluation...")
-    test_result = eval_epoch(
-        model, test_ds, return_predictions=True, class_weights=class_weights
-    )
+    test_result = eval_epoch(model, test_ds, return_predictions=True)
     test_metrics, test_logits, test_labels = cast(
         tuple[dict[str, float], jnp.ndarray, jnp.ndarray], test_result
     )
@@ -389,7 +384,6 @@ def train(
         test_metrics,
         test_logits,
         test_labels,
-        class_weights,
     )
 
     print(

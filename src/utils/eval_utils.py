@@ -54,34 +54,6 @@ def calculate_balanced_accuracy(
     return balanced_acc, per_class_acc
 
 
-def calculate_balanced_accuracy_logit_adjusted(
-    logits: jnp.ndarray,
-    labels: jnp.ndarray,
-    class_weights: jnp.ndarray,
-    num_classes: int,
-) -> float:
-    """Calculate balanced accuracy with logit adjustment.
-
-    Args:
-        logits: Model output logits of shape (batch_size, num_classes).
-        labels: Integer labels of shape (batch_size,).
-        class_weights: Array of per-class weights (inverse of class frequencies).
-        num_classes: Number of classes.
-
-    Returns:
-        Balanced accuracy with logit adjustment.
-    """
-    adjusted_logits = logits + jnp.log(class_weights)
-    predictions = jnp.argmax(adjusted_logits, axis=-1)
-    recalls = []
-    for c in range(num_classes):
-        mask = labels == c
-        if jnp.sum(mask) > 0:
-            recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
-            recalls.append(float(recall))
-    return sum(recalls) / len(recalls) if recalls else 0.0
-
-
 def calculate_sensitivity_specificity(
     logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int
 ) -> tuple[dict[str, float], dict[str, float]]:
@@ -174,12 +146,46 @@ def calculate_brier_score(logits: jnp.ndarray, labels: jnp.ndarray) -> float:
     return float(brier)
 
 
+def calculate_ece(
+    logits: jnp.ndarray, labels: jnp.ndarray, num_bins: int = 15
+) -> float:
+    """Calculate Expected Calibration Error.
+
+    Args:
+        logits: Model output logits of shape (batch_size, num_classes).
+        labels: Integer labels of shape (batch_size,).
+        num_bins: Number of bins for calibration.
+
+    Returns:
+        ECE value (lower is better).
+    """
+    probs = jax.nn.softmax(logits, axis=-1)
+    confidences = jnp.max(probs, axis=-1)
+    predictions = jnp.argmax(probs, axis=-1)
+    accuracies = (predictions == labels).astype(jnp.float32)
+
+    bin_boundaries = jnp.linspace(0, 1, num_bins + 1)
+    ece = 0.0
+    total_samples = len(labels)
+
+    for i in range(num_bins):
+        in_bin = (confidences > bin_boundaries[i]) & (
+            confidences <= bin_boundaries[i + 1]
+        )
+        bin_size = jnp.sum(in_bin)
+        if bin_size > 0:
+            bin_accuracy = jnp.sum(accuracies * in_bin) / bin_size
+            bin_confidence = jnp.sum(confidences * in_bin) / bin_size
+            ece += (bin_size / total_samples) * jnp.abs(bin_accuracy - bin_confidence)
+
+    return float(ece)
+
+
 def compute_metrics(
     logits: jnp.ndarray,
     labels: jnp.ndarray,
     losses: list[float],
     num_classes: int = 8,
-    class_weights: jnp.ndarray | None = None,
 ) -> dict[str, float]:
     """Compute evaluation metrics from logits, labels, and losses.
 
@@ -188,7 +194,6 @@ def compute_metrics(
         labels: Integer labels of shape (batch_size,).
         losses: List of per-batch loss values.
         num_classes: Number of classes.
-        class_weights: Optional array of per-class weights for logit adjustment.
 
     Returns:
         Dictionary containing computed metrics.
@@ -203,6 +208,7 @@ def compute_metrics(
         logits, labels, num_classes
     )
     macro_auroc, per_class_auroc = calculate_auroc(logits, labels, num_classes)
+    ece = calculate_ece(logits, labels)
     brier = calculate_brier_score(logits, labels)
 
     metrics = {
@@ -212,17 +218,12 @@ def compute_metrics(
         "sensitivity_mean": sum(sensitivity.values()) / len(sensitivity),
         "specificity_mean": sum(specificity.values()) / len(specificity),
         "auroc": macro_auroc,
+        "ece": ece,
         "brier": brier,
     }
 
     for k, v in per_class_auroc.items():
         metrics[f"auroc_{k}"] = v
-
-    if class_weights is not None:
-        bal_acc_adj = calculate_balanced_accuracy_logit_adjusted(
-            logits, labels, class_weights, num_classes
-        )
-        metrics["bal_acc_logit_adj"] = bal_acc_adj
 
     for k, v in per_class_acc.items():
         metrics[f"bal_acc_{k}"] = v
@@ -454,7 +455,6 @@ def log_confusion_matrix(
     logits: jnp.ndarray,
     labels: jnp.ndarray,
     title: str = "Confusion Matrix",
-    class_weights: jnp.ndarray | None = None,
 ) -> None:
     """Log confusion matrix to WandB.
 
@@ -462,15 +462,10 @@ def log_confusion_matrix(
         logits: Model output logits of shape (batch_size, num_classes).
         labels: Integer labels of shape (batch_size,).
         title: Title for the confusion matrix plot.
-        class_weights: Optional array of per-class weights for logit adjustment.
     """
 
     class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
-    if class_weights is not None:
-        adjusted_logits = logits + jnp.log(class_weights)
-        predictions = jnp.argmax(adjusted_logits, axis=-1)
-    else:
-        predictions = jnp.argmax(logits, axis=-1)
+    predictions = jnp.argmax(logits, axis=-1)
     cm = wandb.plot.confusion_matrix(
         preds=predictions.tolist(),
         y_true=labels.tolist(),
@@ -486,7 +481,6 @@ def log_final_metrics(
     test_metrics: dict[str, float],
     test_logits: jnp.ndarray,
     test_labels: jnp.ndarray,
-    class_weights: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
 
@@ -496,7 +490,6 @@ def log_final_metrics(
         test_metrics: Dictionary containing test set metrics.
         test_logits: Test set logits for confusion matrix.
         test_labels: Test set labels for confusion matrix.
-        class_weights: Array of per-class weights for logit adjustment.
     """
     test_log_dict = {
         "test/loss": test_metrics["loss"],
@@ -505,18 +498,15 @@ def log_final_metrics(
         "test/sensitivity": test_metrics["sensitivity_mean"],
         "test/specificity": test_metrics["specificity_mean"],
         "test/auroc": test_metrics["auroc"],
+        "test/ece": test_metrics["ece"],
         "test/brier": test_metrics["brier"],
-        "test/bal_acc_logit_adj": test_metrics["bal_acc_logit_adj"],
     }
     for k, v in test_metrics.items():
-        if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
+        if k.startswith("bal_acc_"):
             test_log_dict[f"test_cw/{k}"] = v
     wandb.log(test_log_dict)
 
     log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
-    log_confusion_matrix(
-        test_logits, test_labels, "Test Confusion Matrix Logit Adj", class_weights
-    )
 
     wandb.summary["best_val_balanced_accuracy"] = best_val_balanced_acc
     wandb.summary["best_epoch"] = best_epoch
@@ -526,6 +516,6 @@ def log_final_metrics(
     wandb.summary["test_sensitivity"] = test_metrics["sensitivity_mean"]
     wandb.summary["test_specificity"] = test_metrics["specificity_mean"]
     wandb.summary["test_auroc"] = test_metrics["auroc"]
+    wandb.summary["test_ece"] = test_metrics["ece"]
     wandb.summary["test_brier"] = test_metrics["brier"]
-    wandb.summary["test_bal_acc_logit_adj"] = test_metrics["bal_acc_logit_adj"]
     wandb.finish()
