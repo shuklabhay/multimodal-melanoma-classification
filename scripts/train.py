@@ -104,25 +104,32 @@ def train() -> None:
 def fetch_checkpoints() -> list[dict]:
     """Fetch available checkpoints from Modal volume."""
     print("\nFetching checkpoints from Modal volume...")
+
     result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "modal",
-            "run",
-            "-m",
-            "src.use_modal::list_available_checkpoints",
-        ],
+        ["uv", "run", "modal", "volume", "ls", "data", "/checkpoints", "--json"],
         capture_output=True,
         text=True,
-        check=True,
     )
 
-    output = result.stdout.strip()
-    if not output or output == "[]":
+    if result.returncode != 0 or not result.stdout.strip():
         return []
 
-    return ast.literal_eval(output)
+    import json
+
+    try:
+        entries = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+
+    checkpoints = []
+    for entry in entries:
+        if entry.get("Type") == "dir":
+            filename = entry.get("Filename", "")
+            run_name = filename.split("/")[-1] if filename else ""
+            if run_name:
+                checkpoints.append({"run_name": run_name})
+
+    return checkpoints
 
 
 def select_checkpoint(checkpoints: list[dict]) -> dict | None:
@@ -134,11 +141,7 @@ def select_checkpoint(checkpoints: list[dict]) -> dict | None:
     print("\n=== Available Checkpoints ===")
     for i, ckpt in enumerate(checkpoints, 1):
         run_name = ckpt.get("run_name", "unknown")
-        epoch = ckpt.get("epoch", "?")
-        val_acc = ckpt.get("val_accuracy", 0)
-        config = ckpt.get("config_name", "unknown")
         print(f"  {i}. {run_name}")
-        print(f"     Config: {config} | Epoch: {epoch} | Val Acc: {val_acc:.4f}")
 
     print(f"  {len(checkpoints) + 1}. Cancel")
 
@@ -165,23 +168,21 @@ def resume() -> None:
         return
 
     resume_run_name = checkpoint["run_name"]
-    config_name = checkpoint.get("config_name", "")
+
+    config_dir = Path("config")
+    config_name = None
+    for config_file in config_dir.glob("*.yaml"):
+        potential_config = config_file.stem
+        if resume_run_name.startswith(potential_config + "_"):
+            config_name = potential_config
+            break
 
     if not config_name:
-        print(f"Error: Checkpoint {resume_run_name} has no config_name in metadata.")
+        print(f"Error: Could not determine config for checkpoint {resume_run_name}.")
         return
 
-    config_path = Path("config") / f"{config_name}.yaml"
-    if not config_path.exists():
-        print(f"Error: Config file {config_path} not found.")
-        return
-
-    timestamp = datetime.now().strftime("%b%d%H%M").lower()
-    new_run_name = f"{config_name}_{timestamp}_resumed"
-
-    print(f"\nResuming from: {resume_run_name}")
+    print(f"\nResuming: {resume_run_name}")
     print(f"Config: {config_name}")
-    print(f"New run name: {new_run_name}")
 
     subprocess.run(
         [
@@ -192,7 +193,7 @@ def resume() -> None:
             "--detach",
             "-m",
             "src.use_modal::train_model",
-            f"--run-name={new_run_name}",
+            f"--run-name={resume_run_name}",
             f"--config-name={config_name}",
             f"--resume-from={resume_run_name}",
         ],

@@ -310,11 +310,11 @@ def train(
     Returns:
         The trained model.
     """
-    # Handle resume logic
     start_epoch = 1
     best_val_balanced_acc = 0.0
     best_epoch = 0
     resume_checkpoint_path = None
+    resume_wandb_run_id = None
 
     if resume_from:
         if not checkpoint_exists(resume_from):
@@ -328,6 +328,7 @@ def train(
             best_val_balanced_acc = resume_metadata["val_accuracy"]
             best_epoch = resume_metadata["epoch"]
             resume_checkpoint_path = get_checkpoint_dir(resume_from)
+            resume_wandb_run_id = resume_metadata.get("wandb_run_id")
             print(f"Resuming from run '{resume_from}' at epoch {start_epoch}")
             print(
                 f"  Previous best val_accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})"
@@ -339,6 +340,8 @@ def train(
         project=os.environ["WANDB_PROJECT"],
         entity=os.environ["WANDB_ENTITY"],
         name=run_name,
+        id=resume_wandb_run_id,
+        resume="must" if resume_wandb_run_id else None,
         config={
             "config_name": config_name,
             **config,
@@ -352,6 +355,8 @@ def train(
             "resumed_from": resume_from,
         },
     )
+    assert wandb.run is not None
+    wandb_run_id = wandb.run.id
 
     print("Loading class weights...")
     class_weights = jnp.array(np.load(class_weights_path))
@@ -371,7 +376,6 @@ def train(
         seed=seed,
     )
 
-    # Load checkpoint if resuming
     if resume_from and resume_checkpoint_path:
         print(f"Loading checkpoint from {resume_checkpoint_path}...")
         load_checkpoint(model, resume_from)
@@ -428,6 +432,7 @@ def train(
                 num_classes,
                 seed,
                 config_name,
+                wandb_run_id,
             )
         else:
             epochs_without_improvement += 1

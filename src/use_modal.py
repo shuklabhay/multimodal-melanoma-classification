@@ -105,7 +105,9 @@ def list_available_checkpoints() -> list[dict]:
     """
     from src.utils.eval_utils import list_checkpoints
 
-    return list_checkpoints()
+    checkpoints = list_checkpoints()
+    print(checkpoints)
+    return checkpoints
 
 
 @app.function(
@@ -132,6 +134,7 @@ def generate_test_tsne() -> None:
     cpu=2,
     memory=24576,
     timeout=86400,
+    retries=0,
     secrets=[
         modal.Secret.from_dict(
             {

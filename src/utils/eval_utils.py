@@ -9,6 +9,8 @@ from safetensors.flax import load_file, save_file
 
 from src.pipelines.label_config import LABEL_CONFIG
 
+CHECKPOINT_BASE_DIR = "/data/checkpoints"
+
 
 def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
     """Calculate accuracy from logits and labels.
@@ -231,9 +233,6 @@ def compute_metrics(
     return metrics
 
 
-CHECKPOINT_BASE_DIR = "/data/checkpoints"
-
-
 def get_checkpoint_dir(run_name: str) -> str:
     """Get the checkpoint directory path for a run.
 
@@ -271,6 +270,7 @@ def save_checkpoint(
     num_classes: int,
     seed: int,
     config_name: str,
+    wandb_run_id: str,
 ) -> str:
     """Save model checkpoint to the Modal volume.
 
@@ -284,6 +284,7 @@ def save_checkpoint(
         num_classes: The number of output classes for the model.
         seed: The random seed used for model initialization.
         config_name: Name of the config file used.
+        wandb_run_id: The WandB run ID for resuming logging.
 
     Returns:
         Path to the checkpoint directory.
@@ -313,6 +314,7 @@ def save_checkpoint(
         f.write(f"seed={seed}\n")
         f.write(f"config_name={config_name}\n")
         f.write(f"checkpoint_path={checkpoint_dir}\n")
+        f.write(f"wandb_run_id={wandb_run_id}\n")
 
     print(f"Saved checkpoint to {checkpoint_dir}")
     return checkpoint_dir
