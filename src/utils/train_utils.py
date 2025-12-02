@@ -319,7 +319,6 @@ def train(
             "train/sensitivity": train_metrics["sensitivity_mean"],
             "train/specificity": train_metrics["specificity_mean"],
             "train/auroc": train_metrics["auroc"],
-            "train/ece": train_metrics["ece"],
             "train/brier": train_metrics["brier"],
             "val/loss": val_metrics["loss"],
             "val/accuracy": val_metrics["accuracy"],
@@ -327,12 +326,11 @@ def train(
             "val/sensitivity": val_metrics["sensitivity_mean"],
             "val/specificity": val_metrics["specificity_mean"],
             "val/auroc": val_metrics["auroc"],
-            "val/ece": val_metrics["ece"],
             "val/brier": val_metrics["brier"],
             "val/bal_acc_logit_adj": val_metrics["bal_acc_logit_adj"],
         }
         for k, v in val_metrics.items():
-            if k.startswith("bal_acc_class"):
+            if k.startswith("bal_acc_") and k != "bal_acc_logit_adj":
                 log_dict[f"val/{k}"] = v
         wandb.log(log_dict)
 
