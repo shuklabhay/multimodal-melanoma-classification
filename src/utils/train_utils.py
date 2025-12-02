@@ -117,8 +117,10 @@ def train_step(
     embeddings: jax.Array,
     labels: jax.Array,
     class_weights: jax.Array,
+    aux_image_weight: jax.Array,
+    aux_text_weight: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
-    """Performs a single training step with weighted loss.
+    """Performs a single training step with optional auxiliary losses.
 
     Args:
         model: The model to train.
@@ -127,12 +129,50 @@ def train_step(
         embeddings: Batch of text embeddings.
         labels: Batch of integer labels.
         class_weights: Array of per-class weights for the loss function.
+        aux_image_weight: Weight for the auxiliary image-only loss (0.0 to disable).
+        aux_text_weight: Weight for the auxiliary text-only loss (0.0 to disable).
 
     Returns:
-        A tuple containing the loss and logits for the batch.
+        A tuple of (loss, logits).
     """
+    use_aux = (aux_image_weight > 0.0) | (aux_text_weight > 0.0)
 
-    def loss_fn(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
+    def loss_fn_with_aux(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
+        logits, aux_image_logits, aux_text_logits = model(
+            images=images, embeddings=embeddings, train=True, return_aux=True
+        )
+        per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
+            logits, labels
+        )
+        sample_weights = class_weights[labels]
+        main_loss = jnp.mean(per_sample_loss * sample_weights)
+
+        aux_image_loss = jnp.where(
+            aux_image_logits is not None,
+            jnp.mean(
+                optax.softmax_cross_entropy_with_integer_labels(
+                    aux_image_logits, labels
+                )
+                * sample_weights
+            ),
+            0.0,
+        )
+
+        aux_text_loss = jnp.where(
+            aux_text_logits is not None,
+            jnp.mean(
+                optax.softmax_cross_entropy_with_integer_labels(aux_text_logits, labels)
+                * sample_weights
+            ),
+            0.0,
+        )
+
+        total_loss = (
+            main_loss + aux_image_weight * aux_image_loss + aux_text_weight * aux_text_loss
+        )
+        return total_loss, logits
+
+    def loss_fn_simple(model: nnx.Module) -> tuple[jax.Array, jax.Array]:
         logits = model(images=images, embeddings=embeddings, train=True)
         per_sample_loss = optax.softmax_cross_entropy_with_integer_labels(
             logits, labels
@@ -140,6 +180,8 @@ def train_step(
         sample_weights = class_weights[labels]
         loss = jnp.mean(per_sample_loss * sample_weights)
         return loss, logits
+
+    loss_fn = loss_fn_with_aux if use_aux else loss_fn_simple
 
     (loss, logits), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model)
     optimizer.update(model, grads)
@@ -185,7 +227,7 @@ def train_epoch(
         train_ds: The training dataset.
         class_weights: Array of per-class weights for the loss function.
         epoch: The current epoch number (for progress bar display).
-        config: Model config (for modality dropout settings).
+        config: Model config (for modality dropout and auxiliary loss settings).
 
     Returns:
         A dictionary containing training metrics (accuracy, loss).
@@ -197,6 +239,9 @@ def train_epoch(
     use_modality_dropout = (
         config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
     )
+
+    aux_image_weight = config.get("aux_image_loss_weight", 0.0) if config else 0.0
+    aux_text_weight = config.get("aux_text_loss_weight", 0.0) if config else 0.0
 
     if use_modality_dropout:
         seed_modality_dropout_rng(epoch)
@@ -220,17 +265,26 @@ def train_epoch(
         labels_jax = jnp.array(labels)
 
         loss, logits = train_step(
-            model, optimizer, images_jax, embeddings_jax, labels_jax, class_weights
+            model,
+            optimizer,
+            images_jax,
+            embeddings_jax,
+            labels_jax,
+            class_weights,
+            jnp.array(aux_image_weight),
+            jnp.array(aux_text_weight),
         )
+
+        all_losses.append(float(loss))
         all_logits.append(logits)
         all_labels.append(labels_jax)
-        all_losses.append(float(loss))
-
         pbar.set_postfix(loss=f"{loss:.4f}")
 
     all_logits = jnp.concatenate(all_logits)
     all_labels = jnp.concatenate(all_labels)
-    return compute_metrics(all_logits, all_labels, all_losses)
+    metrics = compute_metrics(all_logits, all_labels, all_losses)
+
+    return metrics
 
 
 def eval_epoch(

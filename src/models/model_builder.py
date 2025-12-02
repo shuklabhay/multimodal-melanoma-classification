@@ -5,7 +5,10 @@ import yaml
 from flax import nnx
 
 from src.models.backbones import ResNet50Backbone
-from src.models.classifiers import ClassifierDepth2, FiLMClassifierDepth2
+from src.models.classifiers import (
+    ClassifierDepth2,
+    FiLMClassifierDepth2,
+)
 
 ENCODER_OUTPUT_DIMS = {
     "resnet50": 2048,
@@ -17,10 +20,12 @@ class ModelConfig(TypedDict, total=False):
     image_enc: str | None
     text_enc: str | None
     fusion_type: str
-    num_classifier_blocks: int
+    classifier: str
     modality_dropout_normal: float
     modality_dropout_zero_text: float
     modality_dropout_swap_text: float
+    aux_image_loss_weight: float
+    aux_text_loss_weight: float
 
 
 class DynamicModel(nnx.Module):
@@ -35,32 +40,28 @@ class DynamicModel(nnx.Module):
         image_enc = config.get("image_enc")
         text_enc = config.get("text_enc")
         fusion_type = config.get("fusion_type", "none")
-        num_classifier_blocks = config.get("num_classifier_blocks", 2)
+        classifier_name = config.get("classifier")
 
         if image_enc == "resnet50" and text_enc is None:
             self.image_encoder = ResNet50Backbone()
-            if num_classifier_blocks == 2:
+            if classifier_name == "ClassifierDepth2":
                 self.classifier = ClassifierDepth2(
                     input_dim=ENCODER_OUTPUT_DIMS["resnet50"],
                     num_classes=num_classes,
                     rngs=rngs,
                 )
             else:
-                raise ValueError(
-                    f"Unsupported num_classifier_blocks: {num_classifier_blocks}"
-                )
+                raise ValueError(f"Unsupported classifier: {classifier_name}")
 
         elif text_enc == "mpnet-base" and image_enc is None:
-            if num_classifier_blocks == 2:
+            if classifier_name == "ClassifierDepth2":
                 self.classifier = ClassifierDepth2(
                     input_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
                     num_classes=num_classes,
                     rngs=rngs,
                 )
             else:
-                raise ValueError(
-                    f"Unsupported num_classifier_blocks: {num_classifier_blocks}"
-                )
+                raise ValueError(f"Unsupported classifier: {classifier_name}")
 
         elif (
             image_enc == "resnet50"
@@ -68,7 +69,7 @@ class DynamicModel(nnx.Module):
             and fusion_type == "film"
         ):
             self.image_encoder = ResNet50Backbone()
-            if num_classifier_blocks == 2:
+            if classifier_name == "FiLMClassifierDepth2":
                 self.classifier = FiLMClassifierDepth2(
                     image_dim=ENCODER_OUTPUT_DIMS["resnet50"],
                     text_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
@@ -76,9 +77,7 @@ class DynamicModel(nnx.Module):
                     rngs=rngs,
                 )
             else:
-                raise ValueError(
-                    f"Unsupported num_classifier_blocks for fusion: {num_classifier_blocks}"
-                )
+                raise ValueError(f"Unsupported classifier for fusion: {classifier_name}")
 
         else:
             raise NotImplementedError(
@@ -90,7 +89,8 @@ class DynamicModel(nnx.Module):
         images: jnp.ndarray | None,
         embeddings: jnp.ndarray | None,
         train: bool = False,
-    ) -> jnp.ndarray:
+        return_aux: bool = False,
+    ) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray | None, jnp.ndarray | None]:
         image_enc = self.config.get("image_enc")
         text_enc = self.config.get("text_enc")
 
@@ -99,13 +99,19 @@ class DynamicModel(nnx.Module):
                 raise ValueError("Model configured for images but no images provided")
             assert isinstance(self.classifier, ClassifierDepth2)
             features = self.image_encoder(images, train=train)
-            return self.classifier(features)
+            logits = self.classifier(features)
+            if return_aux:
+                return logits, None, None
+            return logits
 
         elif text_enc is not None and image_enc is None:
             if embeddings is None:
                 raise ValueError("Model configured for text but no embeddings provided")
             assert isinstance(self.classifier, ClassifierDepth2)
-            return self.classifier(embeddings)
+            logits = self.classifier(embeddings)
+            if return_aux:
+                return logits, None, None
+            return logits
 
         elif image_enc is not None and text_enc is not None:
             if images is None:
@@ -114,7 +120,12 @@ class DynamicModel(nnx.Module):
                 raise ValueError("Fusion model requires text embeddings")
             assert isinstance(self.classifier, FiLMClassifierDepth2)
             image_features = self.image_encoder(images, train=train)
-            return self.classifier(image_features, embeddings)
+            logits = self.classifier(image_features, embeddings)
+            if return_aux:
+                aux_image_logits = self.classifier.forward_image_only(image_features)
+                aux_text_logits = self.classifier.forward_text_only(embeddings)
+                return logits, aux_image_logits, aux_text_logits
+            return logits
 
         else:
             raise NotImplementedError("Invalid config")

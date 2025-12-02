@@ -1,4 +1,4 @@
 image_enc: null
 text_enc: mpnet-base
 fusion_type: none
-num_classifier_blocks: 2
+classifier: ClassifierDepth2
