@@ -2,23 +2,42 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class FiLMBlock(nnx.Module):
-    def __init__(self, feature_dim: int, conditioning_dim: int, rngs: nnx.Rngs):
-        self.gamma_proj = nnx.Linear(conditioning_dim, feature_dim, rngs=rngs)
-        self.beta_proj = nnx.Linear(conditioning_dim, feature_dim, rngs=rngs)
+class ResidualFiLMFusionBlock(nnx.Module):
+    def __init__(
+        self,
+        image_dim: int,
+        text_dim: int,
+        rngs: nnx.Rngs,
+        hidden_dim: int | None = None,
+    ):
+        self.image_dim = image_dim
+        self.text_dim = text_dim
+
+        self.hidden: nnx.Linear | None = None
+        if hidden_dim is not None:
+            self.hidden = nnx.Linear(text_dim, hidden_dim, rngs=rngs)
+            proj_input_dim = hidden_dim
+        else:
+            proj_input_dim = text_dim
+
+        self.proj = nnx.Linear(proj_input_dim, 2 * image_dim, rngs=rngs)
+
+        self.proj.kernel.value = jnp.zeros_like(self.proj.kernel.value)
+        gamma_bias = jnp.ones(image_dim)
+        beta_bias = jnp.zeros(image_dim)
+        if self.proj.bias is not None:
+            self.proj.bias.value = jnp.concatenate([gamma_bias, beta_bias])
 
     def __call__(
-        self, visual_features: jnp.ndarray, conditioning: jnp.ndarray
+        self, image_features: jnp.ndarray, text_features: jnp.ndarray
     ) -> jnp.ndarray:
-        """Apply FiLM modulation.
+        x = text_features
+        if self.hidden is not None:
+            x = nnx.relu(self.hidden(x))
 
-        Args:
-            visual_features: Visual features of shape (batch, feature_dim).
-            conditioning: Conditioning signal of shape (batch, conditioning_dim).
+        gamma_beta = self.proj(x)
+        gamma = gamma_beta[:, : self.image_dim]
+        beta = gamma_beta[:, self.image_dim :]
 
-        Returns:
-            Modulated features of shape (batch, feature_dim).
-        """
-        gamma = self.gamma_proj(conditioning)
-        beta = self.beta_proj(conditioning)
-        return gamma * visual_features + beta
+        fused = image_features * gamma + beta
+        return fused + image_features

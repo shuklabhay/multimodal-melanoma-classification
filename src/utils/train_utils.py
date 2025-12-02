@@ -14,6 +14,8 @@ from tqdm import tqdm
 
 load_dotenv()
 
+_modality_dropout_rng: np.random.Generator | None = None
+
 from src.models.model_builder import DynamicModel, ModelConfig, build_model
 from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
 from src.utils.eval_utils import (
@@ -28,6 +30,61 @@ from src.utils.eval_utils import (
 )
 
 DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
+
+
+def seed_modality_dropout_rng(epoch: int, base_seed: int = 42) -> None:
+    """Reseed the modality dropout RNG for a new epoch.
+
+    Args:
+        epoch: Current epoch number, used to vary the seed per epoch.
+        base_seed: Base seed for reproducibility.
+    """
+    global _modality_dropout_rng
+    _modality_dropout_rng = np.random.default_rng(base_seed + epoch)
+
+
+def apply_modality_dropout(
+    embeddings: np.ndarray,
+    config: ModelConfig,
+) -> np.ndarray:
+    """Apply modality dropout to text embeddings.
+
+    Args:
+        embeddings: Text embeddings of shape (batch_size, embed_dim).
+        config: Model config containing dropout probabilities.
+
+    Returns:
+        Modified embeddings with dropout applied.
+    """
+    global _modality_dropout_rng
+    if _modality_dropout_rng is None:
+        raise RuntimeError(
+            "Must call seed_modality_dropout_rng before apply_modality_dropout"
+        )
+
+    prob_normal = config.get("modality_dropout_normal", 1.0)
+    prob_zero = config.get("modality_dropout_zero_text", 0.0)
+
+    if prob_normal >= 1.0:
+        return embeddings
+
+    batch_size = embeddings.shape[0]
+    result = embeddings.copy()
+    rand_vals = _modality_dropout_rng.random(batch_size)
+
+    for i in range(batch_size):
+        r = rand_vals[i]
+        if r < prob_normal:
+            pass
+        elif r < prob_normal + prob_zero:
+            result[i] = np.zeros_like(result[i])
+        else:
+            rand_idx = _modality_dropout_rng.integers(0, batch_size - 1)
+            if rand_idx >= i:
+                rand_idx += 1
+            result[i] = embeddings[rand_idx]
+
+    return result
 
 
 def create_train_state(
@@ -118,6 +175,7 @@ def train_epoch(
     train_ds: tf.data.Dataset,
     class_weights: jax.Array,
     epoch: int,
+    config: ModelConfig | None = None,
 ) -> dict[str, float]:
     """Trains the model for one epoch.
 
@@ -127,6 +185,7 @@ def train_epoch(
         train_ds: The training dataset.
         class_weights: Array of per-class weights for the loss function.
         epoch: The current epoch number (for progress bar display).
+        config: Model config (for modality dropout settings).
 
     Returns:
         A dictionary containing training metrics (accuracy, loss).
@@ -134,6 +193,13 @@ def train_epoch(
     all_logits = []
     all_labels = []
     all_losses = []
+
+    use_modality_dropout = (
+        config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
+    )
+
+    if use_modality_dropout:
+        seed_modality_dropout_rng(epoch)
 
     batches = cast(Iterable[DatasetBatch], train_ds.as_numpy_iterator())
     pbar = tqdm(
@@ -144,6 +210,11 @@ def train_epoch(
     )
     for batch in pbar:
         (images, embeddings), labels = batch
+
+        if use_modality_dropout:
+            assert config is not None
+            embeddings = apply_modality_dropout(embeddings, config)
+
         images_jax = jnp.array(images)
         embeddings_jax = jnp.array(embeddings)
         labels_jax = jnp.array(labels)
@@ -247,7 +318,9 @@ def train(
 
     if resume_from:
         if not checkpoint_exists(resume_from):
-            raise ValueError(f"Cannot resume: no checkpoint found for run '{resume_from}'")
+            raise ValueError(
+                f"Cannot resume: no checkpoint found for run '{resume_from}'"
+            )
 
         resume_metadata = load_checkpoint_metadata(resume_from)
         if resume_metadata:
@@ -256,7 +329,9 @@ def train(
             best_epoch = resume_metadata["epoch"]
             resume_checkpoint_path = get_checkpoint_dir(resume_from)
             print(f"Resuming from run '{resume_from}' at epoch {start_epoch}")
-            print(f"  Previous best val_accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})")
+            print(
+                f"  Previous best val_accuracy: {best_val_balanced_acc:.4f} (epoch {best_epoch})"
+            )
 
     checkpoint_path = get_checkpoint_dir(run_name)
 
@@ -305,7 +380,14 @@ def train(
 
     print("Starting training...")
     for epoch in range(start_epoch, num_epochs + 1):
-        train_metrics = train_epoch(model, optimizer, train_ds, class_weights, epoch)
+        train_metrics = train_epoch(
+            model,
+            optimizer,
+            train_ds,
+            class_weights,
+            epoch,
+            config=config,
+        )
         val_metrics = cast(dict[str, float], eval_epoch(model, val_ds))
 
         log_dict = {
@@ -335,9 +417,7 @@ def train(
             best_val_balanced_acc = val_metrics["balanced_accuracy"]
             best_epoch = epoch
             epochs_without_improvement = 0
-            print(
-                f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f}"
-            )
+            print(f"Epoch {epoch}: New best! bal_acc={best_val_balanced_acc:.4f}")
             save_checkpoint(
                 model,
                 run_name,
