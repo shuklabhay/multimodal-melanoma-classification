@@ -59,6 +59,30 @@ def similar_pairs() -> None:
     print("\nSimilar pairs saved to assets/figures/test_similar_pairs.png")
 
 
+@app.command()
+def separation_metrics() -> None:
+    """Generate class-wise silhouette and Davies-Bouldin separation metrics."""
+    print("\nGenerating separation metrics on Modal...")
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::generate_separation_metrics",
+        ],
+        check=True,
+    )
+
+    use_buffer(
+        {
+            "separation_metrics.json": "assets/separation_metrics.json",
+        }
+    )
+    print("\nSeparation metrics saved to assets/separation_metrics.json")
+
+
 @app.callback(invoke_without_command=True)
 def main(ctx: Context) -> None:
     """Interactive CLI for analysis utilities."""
@@ -69,16 +93,18 @@ def main(ctx: Context) -> None:
     print("What would you like to do?")
     print("  1. Generate test set t-SNE")
     print("  2. Generate similar pairs visual")
-    print("  3. Exit")
+    print("  3. Generate separation metrics")
+    print("  4. Exit")
 
     steps_map = {
         "1": test_tsne,
         "2": similar_pairs,
+        "3": separation_metrics,
     }
 
     choice = input("\nEnter your choice: ").strip()
 
-    if choice == "3":
+    if choice == "4":
         print("Exiting...")
         return
 

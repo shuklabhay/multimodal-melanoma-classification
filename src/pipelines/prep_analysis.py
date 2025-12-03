@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -5,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.manifold import TSNE
+from sklearn.metrics import davies_bouldin_score, silhouette_samples, silhouette_score
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
@@ -424,8 +426,6 @@ def generate_test_tsne(
 
     processed_images = preprocess_images_for_resnet(images)
     resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
-    print(f"ResNet embeddings shape: {resnet_embeddings.shape}")
-
     tsne_coords = compute_tsne(resnet_embeddings)
 
     plot_tsne_with_centroids(
@@ -455,7 +455,6 @@ def generate_similar_pairs(
 
     processed_images = preprocess_images_for_resnet(images)
     resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
-    print(f"ResNet embeddings shape: {resnet_embeddings.shape}")
 
     knn_distances, knn_indices = build_knn_graph(resnet_embeddings, k=k)
     num_classes = len(LABEL_CONFIG)
@@ -487,3 +486,88 @@ def generate_similar_pairs(
         f"{output_dir}/test_similar_pairs.png",
         n_examples=5,
     )
+
+
+def compute_separation_metrics(embeddings: np.ndarray, labels: np.ndarray) -> dict:
+    """Compute class-wise silhouette and Davies-Bouldin scores on embeddings.
+
+    Args:
+        embeddings: Feature embeddings of shape (N, D).
+        labels: Class labels of shape (N,).
+
+    Returns:
+        Dictionary with overall and class-wise separation metrics.
+    """
+    num_classes = len(LABEL_CONFIG)
+    class_names = [LABEL_CONFIG[i]["name"] for i in range(num_classes)]
+    class_shorts = [LABEL_CONFIG[i]["short"] for i in range(num_classes)]
+
+    print("Computing overall silhouette score...")
+    overall_silhouette = silhouette_score(embeddings, labels)
+
+    print("Computing overall Davies-Bouldin index...")
+    overall_dbi = davies_bouldin_score(embeddings, labels)
+
+    print("Computing per-sample silhouette scores...")
+    sample_silhouettes = silhouette_samples(embeddings, labels)
+
+    class_silhouettes = {}
+    class_counts = {}
+    for class_idx in range(num_classes):
+        mask = labels == class_idx
+        if mask.sum() > 0:
+            class_silhouettes[class_shorts[class_idx]] = float(
+                sample_silhouettes[mask].mean()
+            )
+            class_counts[class_shorts[class_idx]] = int(mask.sum())
+        else:
+            class_silhouettes[class_shorts[class_idx]] = None
+            class_counts[class_shorts[class_idx]] = 0
+
+    return {
+        "overall_silhouette": float(overall_silhouette),
+        "overall_davies_bouldin": float(overall_dbi),
+        "class_silhouette": class_silhouettes,
+        "class_counts": class_counts,
+        "class_names": {class_shorts[i]: class_names[i] for i in range(num_classes)},
+    }
+
+
+def generate_separation_metrics(
+    bundle_dir: str = "/data/bundled",
+    output_path: str = "/data/buffer/separation_metrics.json",
+    batch_size: int = 128,
+) -> None:
+    """Generate separation metrics for train, val, and test splits.
+
+    Args:
+        bundle_dir: Directory containing train.npz, val.npz, test.npz bundles.
+        output_path: Path to save the JSON output.
+        batch_size: Batch size for ResNet inference.
+    """
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    splits = ["train", "val", "test"]
+    all_metrics = {}
+
+    for split in splits:
+        bundle_path = f"{bundle_dir}/{split}.npz"
+        print(f"Processing {split} split...")
+
+        images, _, labels = load_bundle_raw(bundle_path)
+        processed_images = preprocess_images_for_resnet(images)
+        resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
+
+        metrics = compute_separation_metrics(resnet_embeddings, labels)
+        all_metrics[split] = metrics
+
+        print(f"\n{split.upper()} Results:")
+        print(f"  Overall Silhouette: {metrics['overall_silhouette']:.4f}")
+        print(f"  Overall Davies-Bouldin: {metrics['overall_davies_bouldin']:.4f}")
+        print(f"  Class-wise Silhouette:")
+        for short, score in metrics["class_silhouette"].items():
+            if score is not None:
+                print(f"    {short}: {score:.4f}")
+
+    with open(output_path, "w") as f:
+        json.dump(all_metrics, f, indent=2)
+    print(f"\n✓ Saved separation metrics to {output_path}")

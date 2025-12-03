@@ -150,6 +150,25 @@ def generate_similar_pairs() -> None:
 
 @app.function(
     gpu="L4",
+    timeout=86400,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+            }
+        ),
+    ],
+)
+def generate_separation_metrics() -> None:
+    """Generate class-wise silhouette and Davies-Bouldin separation metrics."""
+    from src.pipelines.prep_analysis import generate_separation_metrics
+
+    generate_separation_metrics()
+
+
+@app.function(
+    gpu="L4",
     cpu=2,
     memory=24576,
     timeout=86400,
