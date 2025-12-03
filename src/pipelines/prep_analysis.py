@@ -45,14 +45,16 @@ def preprocess_images_for_resnet(images: np.ndarray) -> np.ndarray:
     mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-    # Batch process with TensorFlow
-    images_tensor = tf.convert_to_tensor(images)
-    images_float = tf.cast(images_tensor, tf.float32) / 255.0
-    images_resized = tf.image.resize_with_crop_or_pad(images_float, 224, 224)
-    images_np = images_resized.numpy()
-    images_normalized = (images_np - mean) / std
+    processed = []
+    for img in tqdm(images, desc="Preprocessing images"):
+        img_tensor = tf.convert_to_tensor(img)
+        img_float = tf.cast(img_tensor, tf.float32) / 255.0
+        img_resized = tf.image.resize_with_crop_or_pad(img_float, 224, 224)
+        img_np = img_resized.numpy()
+        img_normalized = (img_np - mean) / std
+        processed.append(img_normalized)
 
-    return images_normalized.astype(np.float32)
+    return np.array(processed, dtype=np.float32)
 
 
 def extract_resnet_embeddings(images: np.ndarray, batch_size: int = 32) -> np.ndarray:
@@ -644,6 +646,7 @@ def generate_class_separation_analysis(
             intra_dist, inter_dist = compute_pairwise_distances(
                 embeddings, labels, class_a, class_b
             )
+
             overlap = compute_overlap_coefficient(intra_dist, inter_dist)
             pair_key = f"{short_a}_vs_{short_b}"
             overlap_coefficients[split][pair_key] = overlap
