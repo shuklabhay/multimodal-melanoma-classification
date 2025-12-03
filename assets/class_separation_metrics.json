@@ -1,0 +1,129 @@
+{
+  "separation_metrics": {
+    "train": {
+      "overall_silhouette": -0.014840132556855679,
+      "overall_davies_bouldin": 9.212657757622061,
+      "class_silhouette": {
+        "MEL": -0.049446217715740204,
+        "NV": 0.009894056245684624,
+        "BCC": -0.039563316851854324,
+        "AK": -0.003473452292382717,
+        "BKL": -0.046551574021577835,
+        "DF": -0.026838866993784904,
+        "VASC": 0.008851478807628155,
+        "SCC": -0.0308876670897007
+      },
+      "class_counts": {
+        "MEL": 4049,
+        "NV": 11586,
+        "BCC": 2998,
+        "AK": 778,
+        "BKL": 2360,
+        "DF": 211,
+        "VASC": 231,
+        "SCC": 578
+      },
+      "class_names": {
+        "MEL": "Melanoma",
+        "NV": "Melanocytic nevus",
+        "BCC": "Basal cell carcinoma",
+        "AK": "Actinic keratosis",
+        "BKL": "Benign keratosis",
+        "DF": "Dermatofibroma",
+        "VASC": "Vascular",
+        "SCC": "Squamous cell carcinoma"
+      }
+    },
+    "val": {
+      "overall_silhouette": -0.01503938902169466,
+      "overall_davies_bouldin": 8.700634831197926,
+      "class_silhouette": {
+        "MEL": -0.053077198565006256,
+        "NV": 0.016310246661305428,
+        "BCC": -0.04995887354016304,
+        "AK": -0.020095881074666977,
+        "BKL": -0.05197002738714218,
+        "DF": -0.03796112909913063,
+        "VASC": -0.017956972122192383,
+        "SCC": -0.016423465684056282
+      },
+      "class_counts": {
+        "MEL": 473,
+        "NV": 1286,
+        "BCC": 325,
+        "AK": 89,
+        "BKL": 264,
+        "DF": 28,
+        "VASC": 22,
+        "SCC": 50
+      },
+      "class_names": {
+        "MEL": "Melanoma",
+        "NV": "Melanocytic nevus",
+        "BCC": "Basal cell carcinoma",
+        "AK": "Actinic keratosis",
+        "BKL": "Benign keratosis",
+        "DF": "Dermatofibroma",
+        "VASC": "Vascular",
+        "SCC": "Squamous cell carcinoma"
+      }
+    },
+    "test": {
+      "overall_silhouette": -0.0133914640173316,
+      "overall_davies_bouldin": 8.66602623028031,
+      "class_silhouette": {
+        "MEL": -0.03315240889787674,
+        "NV": 0.007088115438818932,
+        "BCC": -0.022324495017528534,
+        "AK": 0.007032060530036688,
+        "BKL": -0.030327964574098587,
+        "DF": -0.004205729346722364,
+        "VASC": -0.01527026854455471,
+        "SCC": -0.014469985850155354
+      },
+      "class_counts": {
+        "MEL": 1971,
+        "NV": 2473,
+        "BCC": 975,
+        "AK": 370,
+        "BKL": 652,
+        "DF": 89,
+        "VASC": 78,
+        "SCC": 160
+      },
+      "class_names": {
+        "MEL": "Melanoma",
+        "NV": "Melanocytic nevus",
+        "BCC": "Basal cell carcinoma",
+        "AK": "Actinic keratosis",
+        "BKL": "Benign keratosis",
+        "DF": "Dermatofibroma",
+        "VASC": "Vascular",
+        "SCC": "Squamous cell carcinoma"
+      }
+    }
+  },
+  "overlap_coefficients": {
+    "train": {
+      "MEL_vs_NV": 0.8912019081734494,
+      "AK_vs_SCC": 0.9506828999002156,
+      "AK_vs_BCC": 0.9588122453202018,
+      "SCC_vs_BCC": 0.9703477591393207,
+      "BKL_vs_MEL": 0.96684286214858
+    },
+    "val": {
+      "MEL_vs_NV": 0.8747301839760288,
+      "AK_vs_SCC": 0.9029981616650941,
+      "AK_vs_BCC": 0.9609033032633612,
+      "SCC_vs_BCC": 0.9411409496872017,
+      "BKL_vs_MEL": 0.9648725194961446
+    },
+    "test": {
+      "MEL_vs_NV": 0.8908609745448053,
+      "AK_vs_SCC": 0.905735434264509,
+      "AK_vs_BCC": 0.9648000088888076,
+      "SCC_vs_BCC": 0.965449410031215,
+      "BKL_vs_MEL": 0.9623918680232894
+    }
+  }
+}
