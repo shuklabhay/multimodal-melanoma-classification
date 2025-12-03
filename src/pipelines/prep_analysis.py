@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.manifold import TSNE
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
 from src.models.backbones import ResNet50Backbone
@@ -45,9 +45,10 @@ def preprocess_images_for_resnet(images: np.ndarray) -> np.ndarray:
     processed = []
     for img in tqdm(images, desc="Preprocessing images"):
         img_tensor = tf.convert_to_tensor(img)
-        img_float = tf.cast(img_tensor, tf.float32) / 255.0
+        img_float = tf.math.divide(tf.cast(img_tensor, tf.float32), 255.0)
         img_resized = tf.image.resize_with_crop_or_pad(img_float, 224, 224)
-        img_normalized = (img_resized.numpy() - mean) / std
+        img_resized_np = np.asarray(img_resized)
+        img_normalized = (img_resized_np - mean) / std
         processed.append(img_normalized)
 
     return np.array(processed, dtype=np.float32)
@@ -205,86 +206,205 @@ def plot_tsne_with_centroids(
     print(f"Saved t-SNE plot to {output_path}")
 
 
-def find_similar_pairs(
-    embeddings: np.ndarray,
-    labels: np.ndarray,
-    images: np.ndarray,
-    n_pairs: int = 10,
-) -> list[tuple[int, int, float]]:
-    """Find pairs of images from different classes that are most visually similar.
+def build_knn_graph(
+    embeddings: np.ndarray, k: int = 20
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build k-NN graph using original embeddings.
 
     Args:
-        embeddings: ResNet embeddings of shape (N, 2048).
-        labels: Class labels of shape (N,).
-        images: Raw images of shape (N, H, W, 3).
-        n_pairs: Number of pairs to return.
+        embeddings: Feature embeddings of shape (N, D).
+        k: Number of nearest neighbors.
 
     Returns:
-        List of (idx1, idx2, similarity) tuples, sorted by similarity descending.
+        Tuple of (distances, indices) arrays of shape (N, k).
     """
-    print("Computing pairwise similarities...")
-    similarities = cosine_similarity(embeddings)
-
-    pairs = []
-    n = len(labels)
-    for i in range(n):
-        for j in range(i + 1, n):
-            if labels[i] != labels[j]:
-                pairs.append((i, j, similarities[i, j]))
-
-    pairs.sort(key=lambda x: x[2], reverse=True)
-    return pairs[:n_pairs]
+    print(f"Building k-NN graph with k={k}...")
+    nbrs = NearestNeighbors(n_neighbors=k + 1, metric="cosine", n_jobs=-1)
+    nbrs.fit(embeddings)
+    distances, indices = nbrs.kneighbors(embeddings)
+    return distances[:, 1:], indices[:, 1:]
 
 
-def plot_similar_pairs(
-    pairs: list[tuple[int, int, float]],
-    images: np.ndarray,
-    labels: np.ndarray,
-    output_path: str,
-) -> None:
-    """Plot pairs of visually similar images from different classes.
+def compute_mixing_index(
+    labels: np.ndarray, knn_indices: np.ndarray, num_classes: int
+) -> np.ndarray:
+    """Compute mixing index matrix showing fraction of k-NN from each class.
 
     Args:
-        pairs: List of (idx1, idx2, similarity) tuples.
-        images: Raw images of shape (N, H, W, 3).
         labels: Class labels of shape (N,).
-        output_path: Path to save the figure.
+        knn_indices: k-NN indices of shape (N, k).
+        num_classes: Number of classes.
+
+    Returns:
+        Mixing matrix of shape (num_classes, num_classes) where [i, j] is the
+        fraction of class i samples that have class j neighbors.
     """
-    print("Creating similar pairs visualization...")
+    print("Computing mixing indices...")
+    mixing_matrix = np.zeros((num_classes, num_classes))
 
-    class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
-    n_pairs = len(pairs)
+    for class_idx in range(num_classes):
+        class_mask = labels == class_idx
+        class_samples = np.where(class_mask)[0]
 
-    fig, axes = plt.subplots(n_pairs, 2, figsize=(8, 3 * n_pairs))
+        if len(class_samples) == 0:
+            continue
 
-    for row, (idx1, idx2, sim) in enumerate(pairs):
-        img1 = images[idx1]
-        img2 = images[idx2]
-        label1 = class_names[labels[idx1]]
-        label2 = class_names[labels[idx2]]
+        neighbor_classes = labels[knn_indices[class_samples]].flatten()
+        for neighbor_class in range(num_classes):
+            count = np.sum(neighbor_classes == neighbor_class)
+            total_neighbors = len(class_samples) * knn_indices.shape[1]
+            mixing_matrix[class_idx, neighbor_class] = count / total_neighbors
 
-        axes[row, 0].imshow(img1)
-        axes[row, 0].set_title(f"{label1}", fontsize=11)
-        axes[row, 0].axis("off")
+    return mixing_matrix
 
-        axes[row, 1].imshow(img2)
-        axes[row, 1].set_title(f"{label2}", fontsize=11)
-        axes[row, 1].axis("off")
 
-        axes[row, 0].set_ylabel(
-            f"Sim: {sim:.3f}", fontsize=10, rotation=0, labelpad=50, va="center"
+def rank_class_pairs(
+    mixing_matrix: np.ndarray, class_names: list[str]
+) -> list[tuple[str, str, float]]:
+    """Rank pairwise look-alike scores.
+
+    Args:
+        mixing_matrix: Mixing matrix of shape (num_classes, num_classes).
+        class_names: List of class names.
+
+    Returns:
+        List of (class_i, class_j, score) tuples, sorted by score descending.
+    """
+    num_classes = len(class_names)
+    pairs = []
+
+    for i in range(num_classes):
+        for j in range(i + 1, num_classes):
+            score = (mixing_matrix[i, j] + mixing_matrix[j, i]) / 2
+            pairs.append((class_names[i], class_names[j], score))
+
+    pairs.sort(key=lambda x: x[2], reverse=True)
+    return pairs
+
+
+def find_cross_class_examples(
+    class_a: int,
+    class_b: int,
+    labels: np.ndarray,
+    knn_indices: np.ndarray,
+    knn_distances: np.ndarray,
+    n_examples: int = 5,
+) -> list[tuple[int, int, float]]:
+    """Find specific examples where class A samples have class B neighbors.
+
+    Args:
+        class_a: First class index.
+        class_b: Second class index.
+        labels: Class labels of shape (N,).
+        knn_indices: k-NN indices of shape (N, k).
+        knn_distances: k-NN distances of shape (N, k).
+        n_examples: Number of examples to return.
+
+    Returns:
+        List of (idx_a, idx_b, distance) tuples.
+    """
+    examples = []
+    class_a_samples = np.where(labels == class_a)[0]
+
+    for idx_a in class_a_samples:
+        neighbors = knn_indices[idx_a]
+        neighbor_labels = labels[neighbors]
+        class_b_mask = neighbor_labels == class_b
+
+        if np.any(class_b_mask):
+            class_b_neighbors = neighbors[class_b_mask]
+            class_b_distances = knn_distances[idx_a][class_b_mask]
+            closest_idx = np.argmin(class_b_distances)
+            idx_b = class_b_neighbors[closest_idx]
+            dist = class_b_distances[closest_idx]
+            examples.append((idx_a, idx_b, dist))
+
+    examples.sort(key=lambda x: x[2])
+    return examples[:n_examples]
+
+
+def plot_specific_pairs(
+    target_pairs: list[tuple[int, int]],
+    labels: np.ndarray,
+    images: np.ndarray,
+    knn_indices: np.ndarray,
+    knn_distances: np.ndarray,
+    output_path: str,
+    n_examples: int = 5,
+) -> None:
+    """Plot specific class pairs with multiple examples in columns with custom spacing.
+
+    Args:
+        target_pairs: List of (class_a, class_b) tuples to visualize.
+        labels: Class labels of shape (N,).
+        images: Raw images of shape (N, H, W, 3).
+        knn_indices: k-NN indices of shape (N, k).
+        knn_distances: k-NN distances of shape (N, k).
+        output_path: Path to save the figure.
+        n_examples: Number of examples per pair.
+    """
+    print("Creating specific pairs visualization...")
+
+    class_shorts = [LABEL_CONFIG[i]["short"] for i in range(len(LABEL_CONFIG))]
+    n_pairs = len(target_pairs)
+
+    width_ratios = []
+    for i in range(n_pairs):
+        width_ratios.extend([1, 1])
+        if i < n_pairs - 1:
+            width_ratios.append(0.5)
+
+    fig = plt.figure(figsize=(n_pairs * 3.5, n_examples * 1.8))
+    gs = fig.add_gridspec(
+        n_examples,
+        n_pairs * 2 + (n_pairs - 1),
+        wspace=0.05,
+        hspace=0.1,
+        width_ratios=width_ratios,
+    )
+
+    for pair_idx, (class_a, class_b) in enumerate(target_pairs):
+        examples = find_cross_class_examples(
+            class_a, class_b, labels, knn_indices, knn_distances, n_examples
         )
 
+        pair_name = f"{class_shorts[class_a]} vs {class_shorts[class_b]}"
+        print(f"  {pair_name}: Found {len(examples)} examples")
+
+        col_start = pair_idx * 3
+
+        for ex_idx, (idx_a, idx_b, dist) in enumerate(examples):
+            ax_a = fig.add_subplot(gs[ex_idx, col_start])
+            ax_a.imshow(images[idx_a])
+            ax_a.axis("off")
+            if ex_idx == 0:
+                ax_a.set_title(
+                    f"{class_shorts[class_a]}", fontsize=11, fontweight="bold"
+                )
+
+            ax_b = fig.add_subplot(gs[ex_idx, col_start + 1])
+            ax_b.imshow(images[idx_b])
+            ax_b.axis("off")
+            if ex_idx == 0:
+                ax_b.set_title(
+                    f"{class_shorts[class_b]}", fontsize=11, fontweight="bold"
+                )
+
+        for ex_idx in range(len(examples), n_examples):
+            ax_a = fig.add_subplot(gs[ex_idx, col_start])
+            ax_a.axis("off")
+            ax_b = fig.add_subplot(gs[ex_idx, col_start + 1])
+            ax_b.axis("off")
+
     fig.suptitle(
-        "Most Visually Similar Pairs (Different Classes)",
+        "k-NN Mixing: Most Confused Class Pairs",
         fontsize=14,
         fontweight="bold",
-        y=1.01,
+        y=0.98,
     )
-    plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"Saved similar pairs plot to {output_path}")
+    print(f"Saved specific pairs plot to {output_path}")
 
 
 def generate_test_tsne(
@@ -292,7 +412,7 @@ def generate_test_tsne(
     output_dir: str = "/data/buffer",
     batch_size: int = 128,
 ) -> None:
-    """Generate t-SNE visualization for test set using ResNet50 embeddings.
+    """Generate t-SNE visualization for test set.
 
     Args:
         bundle_path: Path to test bundle NPZ.
@@ -300,11 +420,9 @@ def generate_test_tsne(
         batch_size: Batch size for ResNet inference.
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-
     images, _, labels = load_bundle_raw(bundle_path)
 
     processed_images = preprocess_images_for_resnet(images)
-
     resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
     print(f"ResNet embeddings shape: {resnet_embeddings.shape}")
 
@@ -317,10 +435,55 @@ def generate_test_tsne(
         title="t-SNE of ResNet50 Embeddings (Test Set)",
     )
 
-    similar_pairs = find_similar_pairs(resnet_embeddings, labels, images, n_pairs=10)
-    plot_similar_pairs(
-        similar_pairs,
-        images,
+
+def generate_similar_pairs(
+    bundle_path: str = "/data/bundled/test.npz",
+    output_dir: str = "/data/buffer",
+    batch_size: int = 128,
+    k: int = 20,
+) -> None:
+    """Generate k-NN mixing analysis and similar pairs visualization for test set.
+
+    Args:
+        bundle_path: Path to test bundle NPZ.
+        output_dir: Directory to save output figures.
+        batch_size: Batch size for ResNet inference.
+        k: Number of nearest neighbors for mixing analysis.
+    """
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    images, _, labels = load_bundle_raw(bundle_path)
+
+    processed_images = preprocess_images_for_resnet(images)
+    resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
+    print(f"ResNet embeddings shape: {resnet_embeddings.shape}")
+
+    knn_distances, knn_indices = build_knn_graph(resnet_embeddings, k=k)
+    num_classes = len(LABEL_CONFIG)
+    mixing_matrix = compute_mixing_index(labels, knn_indices, num_classes)
+
+    class_names = [LABEL_CONFIG[i]["name"] for i in range(num_classes)]
+    ranked_pairs = rank_class_pairs(mixing_matrix, class_names)
+
+    print("\nTop 10 most confused class pairs (by k-NN mixing):")
+    for i, (name_a, name_b, score) in enumerate(ranked_pairs[:10], 1):
+        print(f"  {i}. {name_a} ↔ {name_b}: {score:.4f}")
+
+    class_to_idx = {LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
+
+    target_pairs = [
+        (class_to_idx["MEL"], class_to_idx["NV"]),
+        (class_to_idx["AK"], class_to_idx["SCC"]),
+        (class_to_idx["AK"], class_to_idx["BCC"]),
+        (class_to_idx["SCC"], class_to_idx["BCC"]),
+        (class_to_idx["BKL"], class_to_idx["MEL"]),
+    ]
+
+    plot_specific_pairs(
+        target_pairs,
         labels,
+        images,
+        knn_indices,
+        knn_distances,
         f"{output_dir}/test_similar_pairs.png",
+        n_examples=5,
     )

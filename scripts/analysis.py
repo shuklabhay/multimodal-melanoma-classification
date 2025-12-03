@@ -30,11 +30,33 @@ def test_tsne() -> None:
     use_buffer(
         {
             "test_tsne.png": "assets/figures/test_tsne.png",
-            "test_similar_pairs.png": "assets/figures/test_similar_pairs.png",
         }
     )
     print("\nt-SNE visualization saved to assets/figures/test_tsne.png")
-    print("Similar pairs saved to assets/figures/test_similar_pairs.png")
+
+
+@app.command()
+def similar_pairs() -> None:
+    """Generate k-NN mixing analysis and similar pairs visualization."""
+    print("\nGenerating similar pairs analysis on Modal...")
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::generate_similar_pairs",
+        ],
+        check=True,
+    )
+
+    use_buffer(
+        {
+            "test_similar_pairs.png": "assets/figures/test_similar_pairs.png",
+        }
+    )
+    print("\nSimilar pairs saved to assets/figures/test_similar_pairs.png")
 
 
 @app.callback(invoke_without_command=True)
@@ -46,15 +68,17 @@ def main(ctx: Context) -> None:
     print("\n=== Analysis Utilities ===")
     print("What would you like to do?")
     print("  1. Generate test set t-SNE")
-    print("  2. Exit")
+    print("  2. Generate similar pairs visual")
+    print("  3. Exit")
 
     steps_map = {
         "1": test_tsne,
+        "2": similar_pairs,
     }
 
     choice = input("\nEnter your choice: ").strip()
 
-    if choice == "2":
+    if choice == "3":
         print("Exiting...")
         return
 

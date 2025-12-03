@@ -131,6 +131,25 @@ def generate_test_tsne() -> None:
 
 @app.function(
     gpu="L4",
+    timeout=86400,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+            }
+        ),
+    ],
+)
+def generate_similar_pairs() -> None:
+    """Generate k-NN mixing analysis and similar pairs visualization."""
+    from src.pipelines.prep_analysis import generate_similar_pairs
+
+    generate_similar_pairs()
+
+
+@app.function(
+    gpu="L4",
     cpu=2,
     memory=24576,
     timeout=86400,
