@@ -640,15 +640,12 @@ def generate_class_separation_analysis(
     class_shorts = [LABEL_CONFIG[i]["short"] for i in range(num_classes)]
     class_to_idx = {LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
 
-    # Collect embeddings and metrics for all splits
     split_data: dict[str, dict] = {}
     all_metrics: dict[str, dict] = {}
 
     for split in ["train", "val", "test"]:
         bundle_path = f"{bundle_dir}/{split}.npz"
-        print(f"\n{'='*50}")
         print(f"Processing {split} split...")
-        print(f"{'='*50}")
 
         images, _, labels = load_bundle_raw(bundle_path)
         processed_images = preprocess_images_for_resnet(images)
