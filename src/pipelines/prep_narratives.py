@@ -12,7 +12,7 @@ from aiolimiter import AsyncLimiter
 from openai import AsyncOpenAI
 from tqdm import tqdm
 
-from src.pipelines.label_config import LABEL_CONFIG
+from src.pipelines.label_config import LABEL_CONFIG, SPLIT_COLORS
 
 MEMORY_QUOTAS = {
     "vague": 0.25,
@@ -460,14 +460,11 @@ def _plot_memory_distribution(
     """Plots memory category distribution across splits."""
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
     memory_categories = sorted(MEMORY_QUOTAS.keys())
     x = range(len(memory_categories))
     width = 0.25
 
-    for i, split_name in enumerate(split_order):
+    for i, split_name in enumerate(["train", "val", "test"]):
         if split_name not in manifests:
             continue
 
@@ -488,7 +485,7 @@ def _plot_memory_distribution(
             percentages,
             width,
             label=f"{split_name.capitalize()} (n={total_samples})",
-            color=split_colors[split_name],
+            color=SPLIT_COLORS[split_name],
         )
 
     ax.set_xticks(x)
@@ -512,14 +509,11 @@ def _plot_symptom_distribution(
     """Plots symptom count distribution across splits."""
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
     symptom_counts_range = [0, 1, 2, 3]
     x = range(len(symptom_counts_range))
     width = 0.25
 
-    for i, split_name in enumerate(split_order):
+    for i, split_name in enumerate(["train", "val", "test"]):
         if split_name not in manifests:
             continue
 
@@ -540,7 +534,7 @@ def _plot_symptom_distribution(
             percentages,
             width,
             label=f"{split_name.capitalize()} (n={total_samples})",
-            color=split_colors[split_name],
+            color=SPLIT_COLORS[split_name],
         )
 
     ax.set_xticks(x)

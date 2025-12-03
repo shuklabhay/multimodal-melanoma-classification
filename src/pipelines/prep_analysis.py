@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -7,11 +8,12 @@ import numpy as np
 import tensorflow as tf
 from sklearn.manifold import TSNE
 from sklearn.metrics import davies_bouldin_score, silhouette_samples, silhouette_score
+from sklearn.metrics.pairwise import cosine_distances
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
 from src.models.backbones import ResNet50Backbone
-from src.pipelines.label_config import LABEL_CONFIG
+from src.pipelines.label_config import LABEL_CONFIG, SIMILAR_PAIRS, SPLIT_COLORS
 
 
 def load_bundle_raw(bundle_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -32,27 +34,52 @@ def load_bundle_raw(bundle_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return images, embeddings, labels
 
 
-def preprocess_images_for_resnet(images: np.ndarray) -> np.ndarray:
-    """Preprocess images for ResNet50.
+def _preprocess_single_image(img: np.ndarray) -> np.ndarray:
+    """Preprocess a single image for ResNet50.
 
     Args:
-        images: Raw images of shape (N, H, W, 3) as uint8.
+        img: Raw image of shape (H, W, 3) as uint8.
 
     Returns:
-        Preprocessed images of shape (N, 224, 224, 3) as float32.
+        Preprocessed image of shape (224, 224, 3) as float32.
     """
     mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-    processed = []
-    for img in tqdm(images, desc="Preprocessing images"):
-        img_tensor = tf.convert_to_tensor(img)
-        img_float = tf.math.divide(tf.cast(img_tensor, tf.float32), 255.0)
-        img_resized = tf.image.resize_with_crop_or_pad(img_float, 224, 224)
-        img_resized_np = np.asarray(img_resized)
-        img_normalized = (img_resized_np - mean) / std
-        processed.append(img_normalized)
+    img_tensor = tf.convert_to_tensor(img)
+    img_float = tf.math.divide(tf.cast(img_tensor, tf.float32), 255.0)
+    img_resized = tf.image.resize_with_crop_or_pad(img_float, 224, 224)
 
+    img_resized_np = np.asarray(img_resized)
+    img_normalized = (img_resized_np - mean) / std
+    return img_normalized
+
+
+def preprocess_images_for_resnet(
+    images: np.ndarray, num_workers: int = 4
+) -> np.ndarray:
+    """Preprocess images for ResNet50 using parallel workers.
+
+    Args:
+        images: Raw images of shape (N, H, W, 3) as uint8.
+        num_workers: Number of parallel workers for preprocessing.
+
+    Returns:
+        Preprocessed images of shape (N, 224, 224, 3) as float32.
+    """
+    processed: list[np.ndarray | None] = [None] * len(images)
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {
+            executor.submit(_preprocess_single_image, img): idx
+            for idx, img in enumerate(images)
+        }
+
+        for future in tqdm(
+            as_completed(futures), total=len(images), desc="Preprocessing images"
+        ):
+            idx = futures[future]
+            processed[idx] = future.result()
     return np.array(processed, dtype=np.float32)
 
 
@@ -166,8 +193,7 @@ def plot_tsne_with_centroids(
 
     centroids = compute_class_centroids(tsne_embeddings, labels, num_classes)
 
-    fig, ax = plt.subplots(figsize=figsize)
-
+    _, ax = plt.subplots(figsize=figsize)
     for class_idx in range(num_classes):
         mask = labels == class_idx
         ax.scatter(
@@ -470,11 +496,8 @@ def generate_similar_pairs(
     class_to_idx = {LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
 
     target_pairs = [
-        (class_to_idx["MEL"], class_to_idx["NV"]),
-        (class_to_idx["AK"], class_to_idx["SCC"]),
-        (class_to_idx["AK"], class_to_idx["BCC"]),
-        (class_to_idx["SCC"], class_to_idx["BCC"]),
-        (class_to_idx["BKL"], class_to_idx["MEL"]),
+        (class_to_idx[short_a], class_to_idx[short_b])
+        for short_a, short_b in SIMILAR_PAIRS
     ]
 
     plot_specific_pairs(
@@ -533,41 +556,244 @@ def compute_separation_metrics(embeddings: np.ndarray, labels: np.ndarray) -> di
     }
 
 
-def generate_separation_metrics(
+def compute_pairwise_distances(
+    embeddings: np.ndarray, labels: np.ndarray, class_a: int, class_b: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute intra-class and inter-class distances for a pair of classes.
+
+    Args:
+        embeddings: Feature embeddings of shape (N, D).
+        labels: Class labels of shape (N,).
+        class_a: First class index.
+        class_b: Second class index.
+
+    Returns:
+        Tuple of (intra_distances, inter_distances) arrays.
+    """
+
+    mask_a = labels == class_a
+    mask_b = labels == class_b
+
+    emb_a = embeddings[mask_a]
+    emb_b = embeddings[mask_b]
+
+    dist_aa = cosine_distances(emb_a, emb_a)
+    dist_bb = cosine_distances(emb_b, emb_b)
+
+    intra_a = dist_aa[np.triu_indices(len(emb_a), k=1)]
+    intra_b = dist_bb[np.triu_indices(len(emb_b), k=1)]
+    intra_distances = np.concatenate([intra_a, intra_b])
+
+    dist_ab = cosine_distances(emb_a, emb_b)
+    inter_distances = dist_ab.flatten()
+    return intra_distances, inter_distances
+
+
+def compute_overlap_coefficient(
+    intra_distances: np.ndarray, inter_distances: np.ndarray, n_bins: int = 100
+) -> float:
+    """Compute overlap coefficient between two distance distributions.
+
+    The overlap coefficient is the area of intersection divided by the
+    minimum of the two distribution areas.
+
+    Args:
+        intra_distances: Intra-class distances.
+        inter_distances: Inter-class distances.
+        n_bins: Number of histogram bins.
+
+    Returns:
+        Overlap coefficient in [0, 1]. Higher means more overlap.
+    """
+    all_distances = np.concatenate([intra_distances, inter_distances])
+    bins = np.linspace(all_distances.min(), all_distances.max(), n_bins + 1)
+
+    hist_intra, _ = np.histogram(intra_distances, bins=bins, density=True)
+    hist_inter, _ = np.histogram(inter_distances, bins=bins, density=True)
+
+    bin_width = bins[1] - bins[0]
+    intersection = np.minimum(hist_intra, hist_inter).sum() * bin_width
+    return float(intersection)
+
+
+def generate_class_separation_analysis(
     bundle_dir: str = "/data/bundled",
-    output_path: str = "/data/buffer/separation_metrics.json",
+    output_dir: str = "/data/buffer",
     batch_size: int = 128,
 ) -> None:
-    """Generate separation metrics for train, val, and test splits.
+    """Generate unified class separation analysis with metrics and distance distributions.
+
+    Creates a combined figure with:
+    - Top row: Class-wise silhouette scores (bar chart) and overall metrics (bar chart)
+    - Bottom rows: Distance distributions for similar condition pairs
+
+    All plots show train/val/test splits with consistent colors.
 
     Args:
         bundle_dir: Directory containing train.npz, val.npz, test.npz bundles.
-        output_path: Path to save the JSON output.
+        output_dir: Directory to save outputs.
         batch_size: Batch size for ResNet inference.
     """
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    splits = ["train", "val", "test"]
-    all_metrics = {}
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    for split in splits:
+    num_classes = len(LABEL_CONFIG)
+    class_shorts = [LABEL_CONFIG[i]["short"] for i in range(num_classes)]
+    class_to_idx = {LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
+
+    # Collect embeddings and metrics for all splits
+    split_data: dict[str, dict] = {}
+    all_metrics: dict[str, dict] = {}
+
+    for split in ["train", "val", "test"]:
         bundle_path = f"{bundle_dir}/{split}.npz"
+        print(f"\n{'='*50}")
         print(f"Processing {split} split...")
+        print(f"{'='*50}")
 
         images, _, labels = load_bundle_raw(bundle_path)
         processed_images = preprocess_images_for_resnet(images)
         resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
+        print(f"ResNet embeddings shape: {resnet_embeddings.shape}")
 
         metrics = compute_separation_metrics(resnet_embeddings, labels)
         all_metrics[split] = metrics
+        split_data[split] = {"embeddings": resnet_embeddings, "labels": labels}
 
         print(f"\n{split.upper()} Results:")
         print(f"  Overall Silhouette: {metrics['overall_silhouette']:.4f}")
         print(f"  Overall Davies-Bouldin: {metrics['overall_davies_bouldin']:.4f}")
-        print(f"  Class-wise Silhouette:")
-        for short, score in metrics["class_silhouette"].items():
-            if score is not None:
-                print(f"    {short}: {score:.4f}")
 
-    with open(output_path, "w") as f:
-        json.dump(all_metrics, f, indent=2)
-    print(f"\n✓ Saved separation metrics to {output_path}")
+    overlap_coefficients: dict[str, dict] = {
+        split: {} for split in ["train", "val", "test"]
+    }
+    for split in ["train", "val", "test"]:
+        embeddings = split_data[split]["embeddings"]
+        labels = split_data[split]["labels"]
+        for short_a, short_b in SIMILAR_PAIRS:
+            class_a = class_to_idx[short_a]
+            class_b = class_to_idx[short_b]
+            intra_dist, inter_dist = compute_pairwise_distances(
+                embeddings, labels, class_a, class_b
+            )
+            overlap = compute_overlap_coefficient(intra_dist, inter_dist)
+            pair_key = f"{short_a}_vs_{short_b}"
+            overlap_coefficients[split][pair_key] = overlap
+
+    n_pairs = len(SIMILAR_PAIRS)
+    n_dist_cols = 3
+    n_dist_rows = (n_pairs + n_dist_cols - 1) // n_dist_cols
+
+    fig = plt.figure(figsize=(15, 5 + 4 * n_dist_rows))
+    gs = fig.add_gridspec(1 + n_dist_rows, 3, height_ratios=[1.2] + [1] * n_dist_rows)
+
+    ax_silhouette = fig.add_subplot(gs[0, 0:2])
+    x = np.arange(num_classes)
+    width = 0.25
+    for i, split in enumerate(["train", "val", "test"]):
+        scores = [
+            all_metrics[split]["class_silhouette"].get(short, 0) or 0
+            for short in class_shorts
+        ]
+        ax_silhouette.bar(
+            x + i * width,
+            scores,
+            width,
+            label=split.capitalize(),
+            color=SPLIT_COLORS[split],
+            alpha=0.8,
+        )
+    ax_silhouette.set_xlabel("Class", fontsize=10)
+    ax_silhouette.set_ylabel("Silhouette Score", fontsize=10)
+    ax_silhouette.set_title(
+        "Class-wise Silhouette Scores", fontsize=12, fontweight="bold"
+    )
+    ax_silhouette.set_xticks(x + width)
+    ax_silhouette.set_xticklabels(class_shorts, fontsize=9)
+    ax_silhouette.legend(fontsize=9)
+    ax_silhouette.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+
+    ax_overall = fig.add_subplot(gs[0, 2])
+    metrics_names = ["Silhouette", "Davies-Bouldin"]
+    x_metrics = np.arange(len(metrics_names))
+    for i, split in enumerate(["train", "val", "test"]):
+        values = [
+            all_metrics[split]["overall_silhouette"],
+            all_metrics[split]["overall_davies_bouldin"],
+        ]
+        ax_overall.bar(
+            x_metrics + i * width,
+            values,
+            width,
+            label=split.capitalize(),
+            color=SPLIT_COLORS[split],
+            alpha=0.8,
+        )
+    ax_overall.set_ylabel("Score", fontsize=10)
+    ax_overall.set_title("Overall Separation Metrics", fontsize=12, fontweight="bold")
+    ax_overall.set_xticks(x_metrics + width)
+    ax_overall.set_xticklabels(metrics_names, fontsize=9)
+    ax_overall.legend(fontsize=9)
+
+    print("\nComputing distance distributions for similar condition pairs...")
+    for pair_idx, (short_a, short_b) in enumerate(SIMILAR_PAIRS):
+        row = 1 + pair_idx // n_dist_cols
+        col = pair_idx % n_dist_cols
+        ax = fig.add_subplot(gs[row, col])
+
+        class_a = class_to_idx[short_a]
+        class_b = class_to_idx[short_b]
+
+        for split in ["train", "val", "test"]:
+            embeddings = split_data[split]["embeddings"]
+            labels = split_data[split]["labels"]
+            intra_dist, inter_dist = compute_pairwise_distances(
+                embeddings, labels, class_a, class_b
+            )
+
+            ax.hist(
+                inter_dist,
+                bins=40,
+                alpha=0.5,
+                label=f"{split.capitalize()}",
+                density=True,
+                color=SPLIT_COLORS[split],
+            )
+
+        pair_key = f"{short_a}_vs_{short_b}"
+        test_overlap = overlap_coefficients["test"][pair_key]
+        ax.set_xlabel("Cosine Distance", fontsize=9)
+        ax.set_ylabel("Density", fontsize=9)
+        ax.set_title(
+            f"Inter-class Distance: {short_a} vs {short_b}\nOverlap: {test_overlap:.3f}",
+            fontsize=10,
+        )
+        ax.legend(fontsize=8)
+        print(f"  {short_a} vs {short_b}: test_overlap={test_overlap:.4f}")
+
+    for pair_idx in range(n_pairs, n_dist_rows * n_dist_cols):
+        row = 1 + pair_idx // n_dist_cols
+        col = pair_idx % n_dist_cols
+        ax = fig.add_subplot(gs[row, col])
+        ax.axis("off")
+
+    fig.suptitle(
+        "Class Separation Analysis",
+        fontsize=14,
+        fontweight="bold",
+        y=0.98,
+    )
+    plt.tight_layout()
+    plt.savefig(
+        f"{output_dir}/class_separation_analysis.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close()
+    print(f"\n✓ Saved figure to {output_dir}/class_separation_analysis.png")
+
+    combined_metrics = {
+        "separation_metrics": all_metrics,
+        "overlap_coefficients": overlap_coefficients,
+    }
+    metrics_path = f"{output_dir}/class_separation_metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(combined_metrics, f, indent=2)
+    print(f"✓ Saved metrics to {metrics_path}")

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import polars as pl
 from tqdm import tqdm
 
-from src.pipelines.label_config import LABEL_CONFIG
+from src.pipelines.label_config import LABEL_CONFIG, SPLIT_COLORS
 
 
 def get_label_from_diagnosis(diagnosis_2: str, diagnosis_3: str) -> int:
@@ -448,14 +448,11 @@ def _plot_label_distribution(
     """Plots train vs val vs test label distribution on one plot with different colors."""
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
     all_label_ids = sorted(label_names.keys())
     x = range(len(all_label_ids))
     width = 0.25
 
-    for i, split_name in enumerate(split_order):
+    for i, split_name in enumerate(["train", "val", "test"]):
         if split_name not in splits:
             continue
 
@@ -475,7 +472,7 @@ def _plot_label_distribution(
             percentages,
             width,
             label=f"{split_name.capitalize()} (n={total_samples})",
-            color=split_colors[split_name],
+            color=SPLIT_COLORS[split_name],
         )
 
     ax.set_xticks(x)
@@ -578,14 +575,11 @@ def _plot_gender_distribution(
     """Plots train vs val vs test gender distribution on one chart with grouped bars."""
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
     all_label_ids = sorted(label_names.keys())
     x = range(len(all_label_ids))
     width = 0.12
 
-    for i, split_name in enumerate(split_order):
+    for i, split_name in enumerate(["train", "val", "test"]):
         if split_name not in splits:
             continue
 
@@ -633,7 +627,7 @@ def _plot_gender_distribution(
             male_percentages,
             width,
             label=f"{split_name.capitalize()} Male (n={total_male})",
-            color=split_colors[split_name],
+            color=SPLIT_COLORS[split_name],
             alpha=0.8,
         )
         ax.bar(
@@ -641,7 +635,7 @@ def _plot_gender_distribution(
             female_percentages,
             width,
             label=f"{split_name.capitalize()} Female (n={total_female})",
-            color=split_colors[split_name],
+            color=SPLIT_COLORS[split_name],
             alpha=0.5,
         )
 
@@ -668,9 +662,6 @@ def _plot_age_distribution(
     """Plots train vs val vs test age distribution on one chart with violin plots."""
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
-    split_colors = {"train": "steelblue", "val": "coral", "test": "lightgreen"}
-    split_order = ["train", "val", "test"]
-
     all_label_ids = sorted(label_names.keys())
     width = 0.25
 
@@ -678,7 +669,7 @@ def _plot_age_distribution(
     data_list = []
     colors_list = []
 
-    for i, split_name in enumerate(split_order):
+    for i, split_name in enumerate(["train", "val", "test"]):
         if split_name not in splits:
             continue
 
@@ -694,7 +685,7 @@ def _plot_age_distribution(
                 position = j * (len(split_order) * width + 0.2) + i * width
                 positions_list.append(position)
                 data_list.append(label_data.to_list())
-                colors_list.append(split_colors[split_name])
+                colors_list.append(SPLIT_COLORS[split_name])
 
     parts = ax.violinplot(
         data_list,
@@ -725,7 +716,7 @@ def _plot_age_distribution(
 
     legend_elements = [
         Patch(
-            facecolor=split_colors[split_name], alpha=0.7, label=split_name.capitalize()
+            facecolor=SPLIT_COLORS[split_name], alpha=0.7, label=split_name.capitalize()
         )
         for split_name in split_order
         if split_name in splits

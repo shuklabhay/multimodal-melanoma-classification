@@ -60,9 +60,9 @@ def similar_pairs() -> None:
 
 
 @app.command()
-def separation_metrics() -> None:
-    """Generate class-wise silhouette and Davies-Bouldin separation metrics."""
-    print("\nGenerating separation metrics on Modal...")
+def class_separation() -> None:
+    """Generate class separation analysis (silhouette, Davies-Bouldin, distance distributions)."""
+    print("\nGenerating class separation analysis on Modal...")
     subprocess.run(
         [
             "uv",
@@ -70,17 +70,19 @@ def separation_metrics() -> None:
             "modal",
             "run",
             "-m",
-            "src.use_modal::generate_separation_metrics",
+            "src.use_modal::generate_class_separation_analysis",
         ],
         check=True,
     )
 
     use_buffer(
         {
-            "separation_metrics.json": "assets/separation_metrics.json",
+            "class_separation_analysis.png": "assets/figures/class_separation_analysis.png",
+            "class_separation_metrics.json": "assets/class_separation_metrics.json",
         }
     )
-    print("\nSeparation metrics saved to assets/separation_metrics.json")
+    print("\nClass separation analysis saved to assets/figures/class_separation_analysis.png")
+    print("Metrics saved to assets/class_separation_metrics.json")
 
 
 @app.callback(invoke_without_command=True)
@@ -93,13 +95,13 @@ def main(ctx: Context) -> None:
     print("What would you like to do?")
     print("  1. Generate test set t-SNE")
     print("  2. Generate similar pairs visual")
-    print("  3. Generate separation metrics")
+    print("  3. Generate class separation analysis")
     print("  4. Exit")
 
     steps_map = {
         "1": test_tsne,
         "2": similar_pairs,
-        "3": separation_metrics,
+        "3": class_separation,
     }
 
     choice = input("\nEnter your choice: ").strip()

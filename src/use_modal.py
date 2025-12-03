@@ -160,11 +160,11 @@ def generate_similar_pairs() -> None:
         ),
     ],
 )
-def generate_separation_metrics() -> None:
-    """Generate class-wise silhouette and Davies-Bouldin separation metrics."""
-    from src.pipelines.prep_analysis import generate_separation_metrics
+def generate_class_separation_analysis() -> None:
+    """Generate unified class separation analysis with metrics and distance plots."""
+    from src.pipelines.prep_analysis import generate_class_separation_analysis
 
-    generate_separation_metrics()
+    generate_class_separation_analysis()
 
 
 @app.function(
