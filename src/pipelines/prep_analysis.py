@@ -1,5 +1,4 @@
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -34,53 +33,26 @@ def load_bundle_raw(bundle_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return images, embeddings, labels
 
 
-def _preprocess_single_image(img: np.ndarray) -> np.ndarray:
-    """Preprocess a single image for ResNet50.
-
-    Args:
-        img: Raw image of shape (H, W, 3) as uint8.
-
-    Returns:
-        Preprocessed image of shape (224, 224, 3) as float32.
-    """
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-
-    img_tensor = tf.convert_to_tensor(img)
-    img_float = tf.math.divide(tf.cast(img_tensor, tf.float32), 255.0)
-    img_resized = tf.image.resize_with_crop_or_pad(img_float, 224, 224)
-
-    img_resized_np = np.asarray(img_resized)
-    img_normalized = (img_resized_np - mean) / std
-    return img_normalized
-
-
-def preprocess_images_for_resnet(
-    images: np.ndarray, num_workers: int = 4
-) -> np.ndarray:
-    """Preprocess images for ResNet50 using parallel workers.
+def preprocess_images_for_resnet(images: np.ndarray) -> np.ndarray:
+    """Preprocess images for ResNet50.
 
     Args:
         images: Raw images of shape (N, H, W, 3) as uint8.
-        num_workers: Number of parallel workers for preprocessing.
 
     Returns:
         Preprocessed images of shape (N, 224, 224, 3) as float32.
     """
-    processed: list[np.ndarray | None] = [None] * len(images)
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {
-            executor.submit(_preprocess_single_image, img): idx
-            for idx, img in enumerate(images)
-        }
+    # Batch process with TensorFlow
+    images_tensor = tf.convert_to_tensor(images)
+    images_float = tf.cast(images_tensor, tf.float32) / 255.0
+    images_resized = tf.image.resize_with_crop_or_pad(images_float, 224, 224)
+    images_np = images_resized.numpy()
+    images_normalized = (images_np - mean) / std
 
-        for future in tqdm(
-            as_completed(futures), total=len(images), desc="Preprocessing images"
-        ):
-            idx = futures[future]
-            processed[idx] = future.result()
-    return np.array(processed, dtype=np.float32)
+    return images_normalized.astype(np.float32)
 
 
 def extract_resnet_embeddings(images: np.ndarray, batch_size: int = 32) -> np.ndarray:
