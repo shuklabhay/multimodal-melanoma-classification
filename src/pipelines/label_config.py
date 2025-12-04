@@ -56,10 +56,11 @@ LABEL_CONFIG = {
 
 SIMILAR_PAIRS = [
     ("MEL", "NV"),
+    ("MEL", "BCC"),
+    ("MEL", "BKL"),
     ("AK", "SCC"),
     ("AK", "BCC"),
     ("SCC", "BCC"),
-    ("BKL", "MEL"),
 ]
 
 SPLIT_COLORS = {

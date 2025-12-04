@@ -150,25 +150,6 @@ def generate_similar_pairs() -> None:
 
 @app.function(
     gpu="L4",
-    timeout=86400,
-    secrets=[
-        modal.Secret.from_dict(
-            {
-                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
-                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
-            }
-        ),
-    ],
-)
-def generate_class_separation_analysis() -> None:
-    """Generate unified class separation analysis with metrics and distance plots."""
-    from src.pipelines.prep_analysis import generate_class_separation_analysis
-
-    generate_class_separation_analysis()
-
-
-@app.function(
-    gpu="L4",
     cpu=2,
     memory=24576,
     timeout=86400,
