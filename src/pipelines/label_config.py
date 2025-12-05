@@ -53,3 +53,18 @@ LABEL_CONFIG = {
         "symptoms": "assets/narrative_options/symptoms/scc_symptoms.txt",
     },
 }
+
+SIMILAR_PAIRS = [
+    ("MEL", "NV"),
+    ("MEL", "BCC"),
+    ("MEL", "BKL"),
+    ("AK", "SCC"),
+    ("AK", "BCC"),
+    ("SCC", "BCC"),
+]
+
+SPLIT_COLORS = {
+    "train": "steelblue",
+    "val": "coral",
+    "test": "lightgreen",
+}
