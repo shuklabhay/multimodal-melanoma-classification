@@ -194,14 +194,12 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
 def evaluate_gpt5_on_test(
     modality: str,
     run_name: str,
-    limit: int | None = None,
 ) -> dict:
     """Run GPT-5 evaluation on test set from Modal volume.
 
     Args:
         modality: "image", "text", or "fusion".
         run_name: Name for the WandB run.
-        limit: Optional limit on number of samples (for testing).
 
     Returns:
         Dictionary with metrics and results.
@@ -224,10 +222,6 @@ def evaluate_gpt5_on_test(
 
     entries = load_manifest("/root/assets/manifests/split_test.jsonl")
     print(f"Loaded {len(entries)} test entries")
-
-    if limit:
-        entries = entries[:limit]
-        print(f"Limited to {limit} entries for testing")
 
     predictions, labels = asyncio.run(
         process_classification_entries(entries, modality, batch_size=4)

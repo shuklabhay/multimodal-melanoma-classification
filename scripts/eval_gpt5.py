@@ -10,21 +10,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 app = Typer()
 
 
-def run_eval(modality: str, limit: int | None = None) -> None:
+def run_eval(modality: str) -> None:
     """Run GPT-5 evaluation for a specific modality.
 
     Args:
         modality: "image", "text", or "fusion".
-        limit: Optional limit on number of samples (for testing).
     """
     timestamp = datetime.now().strftime("%b%d%H%M").lower()
-    run_name = f"{modality}_gpt5_{timestamp}"
+    run_name = f"{modality}_gpt5_chat_latest_{timestamp}"
 
     print(f"\nStarting GPT-5 evaluation")
     print(f"  Modality: {modality}")
     print(f"  Run name: {run_name}")
-    if limit:
-        print(f"  Limit: {limit} samples")
 
     cmd = [
         "uv",
@@ -38,35 +35,32 @@ def run_eval(modality: str, limit: int | None = None) -> None:
         f"--run-name={run_name}",
     ]
 
-    if limit:
-        cmd.append(f"--limit={limit}")
-
     subprocess.run(cmd, check=True)
 
 
 @app.command()
-def image(limit: int | None = None) -> None:
+def image() -> None:
     """Evaluate GPT-5 on image-only inputs."""
-    run_eval("image", limit)
+    run_eval("image")
 
 
 @app.command()
-def text(limit: int | None = None) -> None:
+def text() -> None:
     """Evaluate GPT-5 on text-only inputs (patient narratives)."""
-    run_eval("text", limit)
+    run_eval("text")
 
 
 @app.command()
-def fusion(limit: int | None = None) -> None:
+def fusion() -> None:
     """Evaluate GPT-5 on image+text fusion inputs."""
-    run_eval("fusion", limit)
+    run_eval("fusion")
 
 
 @app.command()
-def all(limit: int | None = None) -> None:
+def all() -> None:
     """Run GPT-5 evaluation for all modalities sequentially."""
     for modality in ["image", "text", "fusion"]:
-        run_eval(modality, limit)
+        run_eval(modality)
 
 
 @app.callback(invoke_without_command=True)
@@ -88,11 +82,6 @@ def main(ctx: Context) -> None:
         print("Exiting...")
         return
 
-    limit_input = input(
-        "Enter sample limit (or press Enter for full test set): "
-    ).strip()
-    limit = int(limit_input) if limit_input else None
-
     modality_map = {
         "1": "image",
         "2": "text",
@@ -101,9 +90,9 @@ def main(ctx: Context) -> None:
 
     if choice == "4":
         for modality in ["image", "text", "fusion"]:
-            run_eval(modality, limit)
+            run_eval(modality)
     elif choice in modality_map:
-        run_eval(modality_map[choice], limit)
+        run_eval(modality_map[choice])
     else:
         print("Invalid choice. Please run the script again.")
 
