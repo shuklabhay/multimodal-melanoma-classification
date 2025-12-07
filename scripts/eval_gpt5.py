@@ -17,7 +17,7 @@ def run_eval(modality: str) -> None:
         modality: "image", "text", or "fusion".
     """
     timestamp = datetime.now().strftime("%b%d%H%M").lower()
-    run_name = f"{modality}_gpt5_chat_latest_{timestamp}"
+    run_name = f"{modality}_gpt5_chat_{timestamp}"
 
     print(f"\nStarting GPT-5 evaluation")
     print(f"  Modality: {modality}")
