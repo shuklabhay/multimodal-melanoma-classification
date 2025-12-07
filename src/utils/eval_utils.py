@@ -1,5 +1,5 @@
 import os
-from typing import cast
+from typing import TypedDict, cast
 
 import jax
 import jax.numpy as jnp
@@ -12,72 +12,57 @@ from src.pipelines.label_config import LABEL_CONFIG
 CHECKPOINT_BASE_DIR = "/data/checkpoints"
 
 
-def calculate_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
-    """Calculate accuracy from logits and labels.
+class ClassificationMetrics(TypedDict):
+    accuracy: float
+    balanced_accuracy: float
+    per_class_acc: dict[str, float]
+    sensitivity: dict[str, float]
+    specificity: dict[str, float]
+
+
+def calculate_classification_metrics(
+    predictions: jnp.ndarray, labels: jnp.ndarray, num_classes: int
+) -> ClassificationMetrics:
+    """Calculate accuracy, balanced accuracy, sensitivity, and specificity from predictions.
 
     Args:
-        logits: Model output logits of shape (batch_size, num_classes).
-        labels: Integer labels of shape (batch_size,).
-
-    Returns:
-        Scalar accuracy value.
-    """
-    predictions = jnp.argmax(logits, axis=-1)
-    return jnp.mean(predictions == labels)
-
-
-def calculate_balanced_accuracy(
-    logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int
-) -> tuple[float, dict[str, float]]:
-    """Calculate balanced accuracy (mean of per-class recalls).
-
-    Args:
-        logits: Model output logits of shape (batch_size, num_classes).
-        labels: Integer labels of shape (batch_size,).
+        predictions: Predicted class labels of shape (batch_size,).
+        labels: Ground truth labels of shape (batch_size,).
         num_classes: Number of classes.
 
     Returns:
-        Tuple of (balanced_accuracy, per_class_accuracy_dict).
+        Dictionary containing:
+            - accuracy: Overall accuracy
+            - balanced_accuracy: Mean of per-class recalls
+            - per_class_acc: Dict of per-class accuracies
+            - sensitivity: Dict of per-class sensitivity values
+            - specificity: Dict of per-class specificity values
+            - sensitivity_mean: Mean sensitivity across classes
+            - specificity_mean: Mean specificity across classes
     """
-    predictions = jnp.argmax(logits, axis=-1)
+    accuracy = float(jnp.mean(predictions == labels))
+
     per_class_acc = {}
+    sensitivity = {}
+    specificity = {}
     recalls = []
+
     for c in range(num_classes):
         mask = labels == c
         short = LABEL_CONFIG[c]["short"]
         key = f"{c}{short}"
-        if jnp.sum(mask) > 0:
-            recall = jnp.sum((predictions == c) & mask) / jnp.sum(mask)
-            recalls.append(float(recall))
-            per_class_acc[key] = float(recall)
-        else:
-            per_class_acc[key] = 0.0
-    balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
-    return balanced_acc, per_class_acc
 
-
-def calculate_sensitivity_specificity(
-    logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int
-) -> tuple[dict[str, float], dict[str, float]]:
-    """Calculate per-class sensitivity (recall) and specificity.
-
-    Args:
-        logits: Model output logits of shape (batch_size, num_classes).
-        labels: Integer labels of shape (batch_size,).
-        num_classes: Number of classes.
-
-    Returns:
-        Tuple of (sensitivity_dict, specificity_dict) with per-class values.
-    """
-    predictions = jnp.argmax(logits, axis=-1)
-    sensitivity = {}
-    specificity = {}
-
-    for c in range(num_classes):
         tp = jnp.sum((predictions == c) & (labels == c))
         fn = jnp.sum((predictions != c) & (labels == c))
         tn = jnp.sum((predictions != c) & (labels != c))
         fp = jnp.sum((predictions == c) & (labels != c))
+
+        if jnp.sum(mask) > 0:
+            recall = float(tp / (tp + fn))
+            recalls.append(recall)
+            per_class_acc[key] = recall
+        else:
+            per_class_acc[key] = 0.0
 
         sens = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
         spec = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
@@ -85,7 +70,15 @@ def calculate_sensitivity_specificity(
         sensitivity[f"class_{c}"] = sens
         specificity[f"class_{c}"] = spec
 
-    return sensitivity, specificity
+    balanced_acc = sum(recalls) / len(recalls) if recalls else 0.0
+
+    return {
+        "accuracy": accuracy,
+        "balanced_accuracy": balanced_acc,
+        "per_class_acc": per_class_acc,
+        "sensitivity": sensitivity,
+        "specificity": specificity,
+    }
 
 
 def calculate_auroc(
@@ -200,22 +193,23 @@ def compute_metrics(
     Returns:
         Dictionary containing computed metrics.
     """
-    accuracy = float(calculate_accuracy(logits, labels))
-    balanced_accuracy, per_class_acc = calculate_balanced_accuracy(
-        logits, labels, num_classes
-    )
-    loss = sum(losses) / len(losses)
+    predictions = jnp.argmax(logits, axis=-1)
 
-    sensitivity, specificity = calculate_sensitivity_specificity(
-        logits, labels, num_classes
+    classification_metrics = calculate_classification_metrics(
+        predictions, labels, num_classes
     )
+
+    loss = sum(losses) / len(losses)
     macro_auroc, per_class_auroc = calculate_auroc(logits, labels, num_classes)
     ece = calculate_ece(logits, labels)
     brier = calculate_brier_score(logits, labels)
 
+    sensitivity = classification_metrics["sensitivity"]
+    specificity = classification_metrics["specificity"]
+
     metrics = {
-        "accuracy": accuracy,
-        "balanced_accuracy": balanced_accuracy,
+        "accuracy": classification_metrics["accuracy"],
+        "balanced_accuracy": classification_metrics["balanced_accuracy"],
         "loss": loss,
         "sensitivity_mean": sum(sensitivity.values()) / len(sensitivity),
         "specificity_mean": sum(specificity.values()) / len(specificity),
@@ -227,7 +221,7 @@ def compute_metrics(
     for k, v in per_class_auroc.items():
         metrics[f"auroc_{k}"] = v
 
-    for k, v in per_class_acc.items():
+    for k, v in classification_metrics["per_class_acc"].items():
         metrics[f"bal_acc_{k}"] = v
 
     return metrics
@@ -454,20 +448,18 @@ def list_checkpoints() -> list[dict]:
 
 
 def log_confusion_matrix(
-    logits: jnp.ndarray,
+    predictions: jnp.ndarray,
     labels: jnp.ndarray,
     title: str = "Confusion Matrix",
 ) -> None:
     """Log confusion matrix to WandB.
 
     Args:
-        logits: Model output logits of shape (batch_size, num_classes).
+        predictions: Predicted class labels of shape (batch_size,).
         labels: Integer labels of shape (batch_size,).
         title: Title for the confusion matrix plot.
     """
-
     class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
-    predictions = jnp.argmax(logits, axis=-1)
     cm = wandb.plot.confusion_matrix(
         preds=predictions.tolist(),
         y_true=labels.tolist(),
@@ -481,7 +473,7 @@ def log_final_metrics(
     best_val_balanced_acc: float,
     best_epoch: int,
     test_metrics: dict[str, float],
-    test_logits: jnp.ndarray,
+    test_predictions: jnp.ndarray,
     test_labels: jnp.ndarray,
 ) -> None:
     """Log final training metrics to WandB and finish the run.
@@ -490,7 +482,7 @@ def log_final_metrics(
         best_val_balanced_acc: The best validation balanced accuracy achieved.
         best_epoch: The epoch at which best validation balanced accuracy was achieved.
         test_metrics: Dictionary containing test set metrics.
-        test_logits: Test set logits for confusion matrix.
+        test_predictions: Test set predictions for confusion matrix.
         test_labels: Test set labels for confusion matrix.
     """
     test_log_dict = {
@@ -508,7 +500,7 @@ def log_final_metrics(
             test_log_dict[f"test_cw/{k}"] = v
     wandb.log(test_log_dict)
 
-    log_confusion_matrix(test_logits, test_labels, "Test Confusion Matrix")
+    log_confusion_matrix(test_predictions, test_labels, "Test Confusion Matrix")
 
     wandb.summary["best_val_balanced_accuracy"] = best_val_balanced_acc
     wandb.summary["best_epoch"] = best_epoch
