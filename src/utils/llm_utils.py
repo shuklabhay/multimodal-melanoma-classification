@@ -40,7 +40,7 @@ def create_client(provider: str = "nous") -> tuple[AsyncOpenAI, AsyncLimiter]:
         if not api_key:
             raise ValueError("OPENAI_API_KEY must be set in environment")
         client = AsyncOpenAI(api_key=api_key)
-        limiter = AsyncLimiter(50, 60)
+        limiter = AsyncLimiter(4950, 60)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
