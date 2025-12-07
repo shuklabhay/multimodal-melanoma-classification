@@ -351,13 +351,43 @@ async def process_narrative_batch(
     return list(zip(batch_entries, narrative_texts))
 
 
+async def classify_entry(
+    client: AsyncOpenAI,
+    limiter: AsyncLimiter,
+    entry: dict,
+    modality: str,
+) -> int:
+    """Classify a single entry, loading data lazily.
+
+    Args:
+        client: AsyncOpenAI client instance.
+        limiter: Rate limiter for API calls.
+        entry: Manifest entry with image_path, text_path, label.
+        modality: Input modality ("image", "text", or "fusion").
+
+    Returns:
+        Predicted class number (0-7).
+    """
+    image_base64 = None
+    narrative_text = None
+
+    if modality in ("image", "fusion"):
+        image_base64 = encode_image_base64(entry["image_path"])
+
+    if modality in ("text", "fusion"):
+        with open(entry["text_path"]) as f:
+            narrative_text = f.read().strip()
+
+    return await classify_lesion(client, limiter, image_base64, narrative_text)
+
+
 async def process_classification_batch(
     client: AsyncOpenAI,
     limiter: AsyncLimiter,
     batch_entries: list[dict],
     modality: str,
 ) -> list[tuple[int, int]]:
-    """Classify a batch of entries concurrently.
+    """Classify a batch of entries concurrently with lazy loading.
 
     Args:
         client: AsyncOpenAI client instance.
@@ -368,19 +398,7 @@ async def process_classification_batch(
     Returns:
         List of (prediction, label) tuples.
     """
-    tasks = []
-    for entry in batch_entries:
-        image_base64 = None
-        narrative_text = None
-
-        if modality in ("image", "fusion"):
-            image_base64 = encode_image_base64(entry["image_path"])
-
-        if modality in ("text", "fusion"):
-            with open(entry["text_path"]) as f:
-                narrative_text = f.read().strip()
-
-        tasks.append(classify_lesion(client, limiter, image_base64, narrative_text))
+    tasks = [classify_entry(client, limiter, entry, modality) for entry in batch_entries]
 
     predictions = await asyncio.gather(*tasks)
     labels = [entry["label"] for entry in batch_entries]
