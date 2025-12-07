@@ -398,7 +398,9 @@ async def process_classification_batch(
     Returns:
         List of (prediction, label) tuples.
     """
-    tasks = [classify_entry(client, limiter, entry, modality) for entry in batch_entries]
+    tasks = [
+        classify_entry(client, limiter, entry, modality) for entry in batch_entries
+    ]
 
     predictions = await asyncio.gather(*tasks)
     labels = [entry["label"] for entry in batch_entries]
