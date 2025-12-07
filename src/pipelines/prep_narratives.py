@@ -262,23 +262,12 @@ def verify_narrative_manifests() -> None:
         else:
             print(f"    ✓ All text files exist")
 
-        style_counts = {}
-        memory_counts = {}
         symptom_counts = {0: 0, 1: 0, 2: 0, 3: 0}
 
         for entry in entries:
-
-            memory_cat = entry.get("memory_category", "unknown")
             num_symptoms = len(entry.get("symptoms", []))
 
-            memory_counts[memory_cat] = memory_counts.get(memory_cat, 0) + 1
             symptom_counts[num_symptoms] = symptom_counts.get(num_symptoms, 0) + 1
-
-        print(f"    Memory distribution:")
-        for cat, count in sorted(memory_counts.items()):
-            pct = (count / len(entries)) * 100
-            target = MEMORY_QUOTAS.get(cat, 0) * 100
-            print(f"      {cat}: {count} ({pct:.1f}%, target: {target:.1f}%)")
 
         print(f"    Symptom count distribution:")
         for num, count in sorted(symptom_counts.items()):
@@ -309,57 +298,7 @@ def _generate_distribution_summaries(
         label_id: config["name"] for label_id, config in LABEL_CONFIG.items()
     }
 
-    _plot_memory_distribution(manifests, label_names, output_dir)
     _plot_symptom_distribution(manifests, label_names, output_dir)
-
-
-def _plot_memory_distribution(
-    manifests: dict[str, list[dict]], label_names: dict, output_dir: Path
-) -> None:
-    """Plots memory category distribution across splits."""
-    fig, ax = plt.subplots(1, 1, figsize=(14, 7))
-
-    memory_categories = sorted(MEMORY_QUOTAS.keys())
-    x = range(len(memory_categories))
-    width = 0.25
-
-    for i, split_name in enumerate(["train", "val", "test"]):
-        if split_name not in manifests:
-            continue
-
-        entries = manifests[split_name]
-        total_samples = len(entries)
-
-        memory_counts = {}
-        for entry in entries:
-            memory_cat = entry.get("memory_category", "approximate")
-            memory_counts[memory_cat] = memory_counts.get(memory_cat, 0) + 1
-
-        counts = [memory_counts.get(cat, 0) for cat in memory_categories]
-        percentages = [(count / total_samples) * 100 for count in counts]
-
-        offset = width * (i - 1)
-        ax.bar(
-            [xi + offset for xi in x],
-            percentages,
-            width,
-            label=f"{split_name.capitalize()} (n={total_samples})",
-            color=SPLIT_COLORS[split_name],
-        )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        [cat.capitalize() for cat in memory_categories], rotation=45, ha="right"
-    )
-    ax.set_xlabel("Memory Category")
-    ax.set_ylabel("Percentage (%)")
-    ax.set_title("Memory Distribution", fontsize=14, fontweight="bold")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_dir / "balance_memory.png", dpi=150)
-    plt.close()
 
 
 def _plot_symptom_distribution(
