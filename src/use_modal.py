@@ -185,3 +185,103 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
         config_name=config_name,
         resume_from=resume_from,
     )
+
+
+@app.function(
+    timeout=86400,
+    secrets=[modal.Secret.from_dotenv()],
+)
+def evaluate_gpt5_on_test(
+    modality: str,
+    run_name: str,
+    limit: int | None = None,
+) -> dict:
+    """Run GPT-5 evaluation on test set from Modal volume.
+
+    Args:
+        modality: "image", "text", or "fusion".
+        run_name: Name for the WandB run.
+        limit: Optional limit on number of samples (for testing).
+
+    Returns:
+        Dictionary with metrics and results.
+    """
+    import asyncio
+    import os
+
+    import jax.numpy as jnp
+    import wandb
+
+    from src.utils.data_utils import load_manifest
+    from src.utils.eval_utils import (
+        calculate_classification_metrics,
+        log_confusion_matrix,
+    )
+    from src.utils.llm_utils import process_classification_entries
+
+    print(f"Starting GPT-5 evaluation for modality: {modality}")
+    print(f"Run name: {run_name}")
+
+    entries = load_manifest("/root/assets/manifests/split_test.jsonl")
+    print(f"Loaded {len(entries)} test entries")
+
+    if limit:
+        entries = entries[:limit]
+        print(f"Limited to {limit} entries for testing")
+
+    predictions, labels = asyncio.run(
+        process_classification_entries(entries, modality, batch_size=4)
+    )
+
+    predictions_arr = jnp.array(predictions)
+    labels_arr = jnp.array(labels)
+
+    metrics = calculate_classification_metrics(
+        predictions_arr, labels_arr, num_classes=8
+    )
+
+    sensitivity = metrics["sensitivity"]
+    specificity = metrics["specificity"]
+
+    wandb.init(
+        project=os.environ["WANDB_PROJECT"],
+        entity=os.environ["WANDB_ENTITY"],
+        name=run_name,
+        config={
+            "model": "gpt-5-chat-latest",
+            "modality": modality,
+            "test_samples": len(entries),
+        },
+    )
+
+    wandb.log(
+        {
+            "test/accuracy": metrics["accuracy"],
+            "test/balanced_accuracy": metrics["balanced_accuracy"],
+            "test/sensitivity": sum(sensitivity.values()) / len(sensitivity),
+            "test/specificity": sum(specificity.values()) / len(specificity),
+        }
+    )
+
+    for k, v in metrics["per_class_acc"].items():
+        wandb.log({f"test_cw/bal_acc_{k}": v})
+
+    log_confusion_matrix(predictions_arr, labels_arr, "Test Confusion Matrix")
+
+    wandb.summary["test_accuracy"] = metrics["accuracy"]
+    wandb.summary["test_balanced_accuracy"] = metrics["balanced_accuracy"]
+    wandb.summary["test_sensitivity"] = sum(sensitivity.values()) / len(sensitivity)
+    wandb.summary["test_specificity"] = sum(specificity.values()) / len(specificity)
+
+    wandb.finish()
+
+    print(f"\nResults for {modality}:")
+    print(f"  Accuracy: {metrics['accuracy']:.4f}")
+    print(f"  Balanced Accuracy: {metrics['balanced_accuracy']:.4f}")
+
+    return {
+        "accuracy": metrics["accuracy"],
+        "balanced_accuracy": metrics["balanced_accuracy"],
+        "predictions": predictions,
+        "labels": labels,
+    }
