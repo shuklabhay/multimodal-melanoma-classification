@@ -189,6 +189,7 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
 
 @app.function(
     timeout=86400,
+    memory=1536,
     secrets=[modal.Secret.from_dotenv()],
 )
 def evaluate_gpt5_on_test(

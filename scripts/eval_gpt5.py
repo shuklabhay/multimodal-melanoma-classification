@@ -28,7 +28,6 @@ def run_eval(modality: str) -> None:
         "run",
         "modal",
         "run",
-        "--detach",
         "-m",
         "src.use_modal::evaluate_gpt5_on_test",
         f"--modality={modality}",
