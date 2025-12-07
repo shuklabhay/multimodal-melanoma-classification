@@ -142,7 +142,6 @@ def generate_heatmap(
                 fontweight="bold",
             )
 
-    # Inset outlines to avoid overlap at shared boundaries
     inset = 0.01
     for i, j in diagonal_increase:
         rect = patches.Rectangle(
@@ -214,7 +213,6 @@ def main(
     ),
 ) -> None:
     """Generate confusion difference heatmap (Model A - Model B)."""
-    # Strip quotes from paths (user might paste quoted paths)
     path_a = Path(model_a_csv.strip("'\""))
     path_b = Path(model_b_csv.strip("'\""))
     output.parent.mkdir(parents=True, exist_ok=True)

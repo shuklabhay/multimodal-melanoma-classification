@@ -470,11 +470,12 @@ def train(
         tuple[dict[str, float], jnp.ndarray, jnp.ndarray], test_result
     )
 
+    test_predictions = jnp.argmax(test_logits, axis=-1)
     log_final_metrics(
         best_val_balanced_acc,
         best_epoch,
         test_metrics,
-        test_logits,
+        test_predictions,
         test_labels,
     )
 
