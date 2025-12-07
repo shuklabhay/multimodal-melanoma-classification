@@ -224,7 +224,7 @@ def evaluate_gpt5_on_test(
     print(f"Loaded {len(entries)} test entries")
 
     predictions, labels = asyncio.run(
-        process_classification_entries(entries, modality, batch_size=256)
+        process_classification_entries(entries, modality, batch_size=512)
     )
 
     predictions_arr = jnp.array(predictions)
