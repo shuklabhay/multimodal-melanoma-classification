@@ -9,7 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
 from src.models.backbones import ResNet50Backbone
-from src.pipelines.label_config import LABEL_CONFIG, SIMILAR_PAIRS
+from src.pipelines.label_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
 
 
 def load_bundle_raw(bundle_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -156,7 +156,9 @@ def plot_tsne_with_centroids(
     """
     print("Creating t-SNE plot with centroids...")
 
-    class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
+    class_names = [
+        ISIC19_LABEL_CONFIG[i]["name"] for i in range(len(ISIC19_LABEL_CONFIG))
+    ]
     num_classes = len(class_names)
 
     cmap = plt.cm.get_cmap("tab10", num_classes)
@@ -344,7 +346,9 @@ def plot_specific_pairs(
     """
     print("Creating specific pairs visualization...")
 
-    class_shorts = [LABEL_CONFIG[i]["short"] for i in range(len(LABEL_CONFIG))]
+    class_shorts = [
+        ISIC19_LABEL_CONFIG[i]["short"] for i in range(len(ISIC19_LABEL_CONFIG))
+    ]
     n_pairs = len(target_pairs)
 
     width_ratios = []
@@ -454,21 +458,21 @@ def generate_similar_pairs(
     resnet_embeddings = extract_resnet_embeddings(processed_images, batch_size)
 
     knn_distances, knn_indices = build_knn_graph(resnet_embeddings, k=k)
-    num_classes = len(LABEL_CONFIG)
+    num_classes = len(ISIC19_LABEL_CONFIG)
     mixing_matrix = compute_mixing_index(labels, knn_indices, num_classes)
 
-    class_names = [LABEL_CONFIG[i]["name"] for i in range(num_classes)]
+    class_names = [ISIC19_LABEL_CONFIG[i]["name"] for i in range(num_classes)]
     ranked_pairs = rank_class_pairs(mixing_matrix, class_names)
 
     print("\nTop 10 most confused class pairs (by k-NN mixing):")
     for i, (name_a, name_b, score) in enumerate(ranked_pairs[:10], 1):
         print(f"  {i}. {name_a} ↔ {name_b}: {score:.4f}")
 
-    class_to_idx = {LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
+    class_to_idx = {ISIC19_LABEL_CONFIG[i]["short"]: i for i in range(num_classes)}
 
     target_pairs = [
         (class_to_idx[short_a], class_to_idx[short_b])
-        for short_a, short_b in SIMILAR_PAIRS
+        for short_a, short_b in ISIC19_SIMILAR_PAIRS
     ]
 
     plot_specific_pairs(

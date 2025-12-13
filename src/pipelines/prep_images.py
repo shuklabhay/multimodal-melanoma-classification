@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import polars as pl
 from tqdm import tqdm
 
-from src.pipelines.label_config import LABEL_CONFIG, SPLIT_COLORS
+from src.pipelines.label_config import ISIC19_LABEL_CONFIG, SPLIT_COLORS
 
 
 def get_label_from_diagnosis(diagnosis_2: str, diagnosis_3: str) -> int:
@@ -26,7 +26,7 @@ def get_label_from_diagnosis(diagnosis_2: str, diagnosis_3: str) -> int:
             continue
 
         d = diagnosis.lower()
-        for label_id, config in LABEL_CONFIG.items():
+        for label_id, config in ISIC19_LABEL_CONFIG.items():
             for diagnosis_str in config["diagnoses"]:
                 if diagnosis_str.lower() in d:
                     return label_id
@@ -434,7 +434,7 @@ def _generate_balance_summaries(
         output_dir: Directory to save summary images.
     """
     label_names = {
-        label_id: config["name"] for label_id, config in LABEL_CONFIG.items()
+        label_id: config["name"] for label_id, config in ISIC19_LABEL_CONFIG.items()
     }
     _plot_label_distribution(splits, label_names, output_dir)
     _plot_site_distribution(splits, label_names, output_dir)

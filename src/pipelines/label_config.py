@@ -1,4 +1,4 @@
-LABEL_CONFIG = {
+ISIC19_LABEL_CONFIG = {
     0: {
         "name": "Melanoma",
         "short": "MEL",
@@ -54,7 +54,7 @@ LABEL_CONFIG = {
     },
 }
 
-SIMILAR_PAIRS = [
+ISIC19_SIMILAR_PAIRS = [
     ("MEL", "NV"),
     ("MEL", "BCC"),
     ("MEL", "BKL"),

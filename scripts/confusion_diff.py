@@ -11,14 +11,16 @@ import typer
 from matplotlib.colors import LinearSegmentedColormap
 from scipy import stats
 
-from src.pipelines.label_config import LABEL_CONFIG, SIMILAR_PAIRS
+from src.pipelines.label_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
 
 app = typer.Typer()
 
 
-NAME_TO_SHORT: dict[str, str] = {v["name"]: v["short"] for v in LABEL_CONFIG.values()}
+NAME_TO_SHORT: dict[str, str] = {
+    v["name"]: v["short"] for v in ISIC19_LABEL_CONFIG.values()
+}
 VISUALLY_SIMILAR_SHORTS: set[str] = set()
-for a, b in SIMILAR_PAIRS:
+for a, b in ISIC19_SIMILAR_PAIRS:
     VISUALLY_SIMILAR_SHORTS.add(a)
     VISUALLY_SIMILAR_SHORTS.add(b)
 
@@ -100,7 +102,7 @@ def generate_heatmap(
     diagonal_increase = [(i, i) for i in similar_class_indices]
     off_diagonal_decrease: list[tuple[int, int]] = []
     short_to_idx = {NAME_TO_SHORT.get(c, ""): i for i, c in enumerate(classes)}
-    for a, b in SIMILAR_PAIRS:
+    for a, b in ISIC19_SIMILAR_PAIRS:
         if a in short_to_idx and b in short_to_idx:
             idx_a, idx_b = short_to_idx[a], short_to_idx[b]
             off_diagonal_decrease.append((idx_a, idx_b))

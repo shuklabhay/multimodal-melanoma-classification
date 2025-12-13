@@ -5,7 +5,7 @@ from pathlib import Path
 import jsonlines
 import matplotlib.pyplot as plt
 
-from src.pipelines.label_config import LABEL_CONFIG, SPLIT_COLORS
+from src.pipelines.label_config import ISIC19_LABEL_CONFIG, SPLIT_COLORS
 from src.utils.llm_utils import process_narrative_entries
 
 MEMORY_QUOTAS = {
@@ -90,7 +90,7 @@ def select_narrative_parameters(
     Returns:
         Dictionary with selected parameters.
     """
-    symptoms_file = LABEL_CONFIG[label]["symptoms"]
+    symptoms_file = ISIC19_LABEL_CONFIG[label]["symptoms"]
     available_symptoms = load_text_file(symptoms_file)
 
     is_asymptomatic = rng.random() < ASYMPTOMATIC_PROB
@@ -295,7 +295,7 @@ def _generate_distribution_summaries(
         output_dir: Directory to save visualization images.
     """
     label_names = {
-        label_id: config["name"] for label_id, config in LABEL_CONFIG.items()
+        label_id: config["name"] for label_id, config in ISIC19_LABEL_CONFIG.items()
     }
 
     _plot_symptom_distribution(manifests, label_names, output_dir)

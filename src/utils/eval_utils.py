@@ -7,7 +7,7 @@ import wandb
 from flax import nnx, traverse_util
 from safetensors.flax import load_file, save_file
 
-from src.pipelines.label_config import LABEL_CONFIG
+from src.pipelines.label_config import ISIC19_LABEL_CONFIG
 
 CHECKPOINT_BASE_DIR = "/data/checkpoints"
 
@@ -49,7 +49,7 @@ def calculate_classification_metrics(
 
     for c in range(num_classes):
         mask = labels == c
-        short = LABEL_CONFIG[c]["short"]
+        short = ISIC19_LABEL_CONFIG[c]["short"]
         key = f"{c}{short}"
 
         tp = jnp.sum((predictions == c) & (labels == c))
@@ -459,7 +459,9 @@ def log_confusion_matrix(
         labels: Integer labels of shape (batch_size,).
         title: Title for the confusion matrix plot.
     """
-    class_names = [LABEL_CONFIG[i]["name"] for i in range(len(LABEL_CONFIG))]
+    class_names = [
+        ISIC19_LABEL_CONFIG[i]["name"] for i in range(len(ISIC19_LABEL_CONFIG))
+    ]
     cm = wandb.plot.confusion_matrix(
         preds=predictions.tolist(),
         y_true=labels.tolist(),
