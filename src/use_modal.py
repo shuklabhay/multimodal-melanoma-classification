@@ -3,8 +3,10 @@ from modal import App, Image, Volume
 
 from src.pipelines.prep_embeddings import create_narrative_embeddings
 from src.pipelines.prep_images import (
+    ISIC2019_CONFIG,
+    MILK10K_CONFIG,
     create_manifests,
-    download_isic2019,
+    download_dataset,
     verify_download,
 )
 from src.pipelines.prep_narratives import generate_narrative_texts
@@ -40,24 +42,25 @@ app = App(
 )
 
 
-@app.function(timeout=86400)
-def images(step: str) -> None:
-    """Collect and sort image data inside a Modal volume using the ISIC CLI.
+DATASET_CONFIGS = {
+    "isic2019": ISIC2019_CONFIG,
+    "milk10k": MILK10K_CONFIG,
+}
 
-    Args:
-        step: workflow step to run ('all', 'download', 'verify_download').
-    """
+
+@app.function(timeout=86400)
+def images(dataset: str, step: str) -> None:
+    config = DATASET_CONFIGS[dataset]
     if step in ["all", "download"]:
-        download_isic2019()
-
+        download_dataset(config)
     if step in ["all", "verify_download"]:
-        verify_download()
+        verify_download(config)
 
 
 @app.function(timeout=86400)
-def process_images() -> None:
-    """Processes ISIC2019 image data to create train/val/test manifests and save to volume."""
-    create_manifests(train_ratio=0.9)
+def process_images(dataset: str) -> None:
+    config = DATASET_CONFIGS[dataset]
+    create_manifests(config, train_ratio=0.9)
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
