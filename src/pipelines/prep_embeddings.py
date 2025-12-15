@@ -77,7 +77,9 @@ async def generate_embeddings_for_split(
         content = await f.read()
         narrative_items = [json.loads(line) for line in content.strip().split("\n")]
 
-    embedding_dir = Path(output_dir) / split_name / "embeddings"
+    parent_dir = "train" if split_name in ["train", "val"] else "test"
+    prefix = Path(narrative_manifest_path).stem.split("_narratives_")[0]
+    embedding_dir = Path(output_dir) / parent_dir / f"{prefix}_text_embeddings"
     embedding_dir.mkdir(parents=True, exist_ok=True)
 
     for item in narrative_items:
