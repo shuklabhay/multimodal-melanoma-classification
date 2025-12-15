@@ -507,8 +507,7 @@ def _plot_site_distribution(
         [None] if None in all_sites_set else []
     )
 
-    split_order = ["train", "val", "test"]
-    for ax, split_name in zip(axes, split_order):
+    for ax, split_name in zip(axes, list(SPLIT_COLORS.keys())):
         if split_name not in splits:
             continue
         df = splits[split_name]
@@ -682,7 +681,7 @@ def _plot_age_distribution(
             label_data = label_data.filter(label_data.is_not_null())
 
             if len(label_data) > 0:
-                position = j * (len(split_order) * width + 0.2) + i * width
+                position = j * (len(SPLIT_COLORS) * width + 0.2) + i * width
                 positions_list.append(position)
                 data_list.append(label_data.to_list())
                 colors_list.append(SPLIT_COLORS[split_name])
@@ -700,7 +699,7 @@ def _plot_age_distribution(
         pc.set_alpha(0.7)
 
     x_positions = [
-        j * (len(split_order) * width + 0.2) + width for j in range(len(all_label_ids))
+        j * (len(SPLIT_COLORS) * width + 0.2) + width for j in range(len(all_label_ids))
     ]
     ax.set_xticks(x_positions)
     ax.set_xticklabels(
@@ -718,7 +717,7 @@ def _plot_age_distribution(
         Patch(
             facecolor=SPLIT_COLORS[split_name], alpha=0.7, label=split_name.capitalize()
         )
-        for split_name in split_order
+        for split_name in SPLIT_COLORS
         if split_name in splits
     ]
     ax.legend(handles=legend_elements, loc="upper right")
