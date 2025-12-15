@@ -74,15 +74,16 @@ def _handle_isic2019_submenu() -> None:
             }
         )
     elif choice == "4":
+        from src.pipelines.prep_images import ISIC2019_CONFIG
         from src.pipelines.prep_narratives import (
             create_local_narrative_manifests,
             visualize_narrative_manifests,
         )
 
-        create_local_narrative_manifests()
-        visualize_narrative_manifests()
+        create_local_narrative_manifests(ISIC2019_CONFIG)
+        visualize_narrative_manifests(ISIC2019_CONFIG)
         subprocess.run(
-            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
+            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint", "--dataset", "isic2019"],
             check=True,
         )
 
@@ -114,15 +115,16 @@ def _handle_milk10k_submenu() -> None:
             }
         )
     elif choice == "4":
+        from src.pipelines.prep_images import MILK10K_CONFIG
         from src.pipelines.prep_narratives import (
             create_local_narrative_manifests,
             visualize_narrative_manifests,
         )
 
-        create_local_narrative_manifests()
-        visualize_narrative_manifests()
+        create_local_narrative_manifests(MILK10K_CONFIG)
+        visualize_narrative_manifests(MILK10K_CONFIG)
         subprocess.run(
-            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
+            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint", "--dataset", "milk10k"],
             check=True,
         )
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import jsonlines
 import matplotlib.pyplot as plt
 
-from src.pipelines.label_config import ISIC19_LABEL_CONFIG, SPLIT_COLORS
+from src.pipelines.label_config import SPLIT_COLORS, DatasetConfig
 from src.utils.llm_utils import process_narrative_entries
 
 MEMORY_QUOTAS = {
@@ -79,18 +79,9 @@ def select_narrative_parameters(
     label: int,
     narrative_options: dict,
     rng: random.Random,
+    config: DatasetConfig,
 ) -> dict:
-    """Selects narrative parameters for generation using deterministic random selection.
-
-    Args:
-        label: Image label (0-7).
-        narrative_options: Dictionary with all narrative options.
-        rng: Random number generator for deterministic selection.
-
-    Returns:
-        Dictionary with selected parameters.
-    """
-    symptoms_file = ISIC19_LABEL_CONFIG[label]["symptoms"]
+    symptoms_file = config.label_config[label]["symptoms"]
     available_symptoms = load_text_file(symptoms_file)
 
     is_asymptomatic = rng.random() < ASYMPTOMATIC_PROB
@@ -121,12 +112,7 @@ def select_narrative_parameters(
     }
 
 
-def create_local_narrative_manifests() -> None:
-    """Generates complete narrative manifests with all parameters locally (no text generation).
-
-    Creates narrative manifests with all metadata and parameters pre-selected for each image.
-    Text content is left empty to be filled by Modal generation later.
-    """
+def create_local_narrative_manifests(config: DatasetConfig) -> None:
     options_dir = Path("assets/narrative_options")
     narrative_options = load_narrative_options(options_dir)
 
@@ -134,16 +120,17 @@ def create_local_narrative_manifests() -> None:
     manifests_dir = Path("assets/manifests")
     manifests_dir.mkdir(parents=True, exist_ok=True)
 
+    prefix = config.name
     splits = ["train", "val", "test"]
     for split in splits:
-        image_manifest_path = manifests_dir / f"isic_split_{split}.jsonl"
+        image_manifest_path = manifests_dir / f"{prefix}_split_{split}.jsonl"
         if not image_manifest_path.exists():
             continue
 
         with jsonlines.open(image_manifest_path) as reader:
             image_entries = list(reader)
 
-        narrative_manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        narrative_manifest_path = manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
         narrative_entries = []
 
         for entry in image_entries:
@@ -151,16 +138,16 @@ def create_local_narrative_manifests() -> None:
             image_path = Path(entry["image_path"])
 
             text_filename = image_path.stem + ".txt"
-            text_path_train = f"/data/raw/train/narratives/{text_filename}"
-            text_path_test = f"/data/raw/test/narratives/{text_filename}"
-            text_path = text_path_train if split == "train" else text_path_test
+            text_path_train = f"/data/raw/train/{prefix}_narratives/{text_filename}"
+            text_path_test = f"/data/raw/test/{prefix}_narratives/{text_filename}"
+            text_path = text_path_train if split in ["train", "val"] else text_path_test
 
-            params = select_narrative_parameters(label, narrative_options, rng)
+            params = select_narrative_parameters(label, narrative_options, rng, config)
             narrative_entry = {
                 "text_path": text_path,
                 "text": "",
                 "label": label,
-                "patient_id": entry.get("patient_id", ""),
+                config.id_column_for_manifest: entry.get(config.id_column_for_manifest, ""),
                 "style": params["style"],
                 "memory": params["memory"],
                 "memory_category": params["memory_category"],
@@ -177,28 +164,29 @@ def create_local_narrative_manifests() -> None:
         with jsonlines.open(narrative_manifest_path, mode="w") as writer:
             writer.write_all(narrative_entries)
 
+    print(f"✓ Created narrative manifests for {prefix}")
 
-def visualize_narrative_manifests() -> None:
-    """Generates and saves narrative distribution visualizations from local manifests."""
+
+def visualize_narrative_manifests(config: DatasetConfig) -> None:
     manifests_dir = Path("assets/manifests")
     figures_dir = Path("assets/figures")
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    prefix = config.name
     all_manifests = {}
     splits = ["train", "val", "test"]
 
     for split in splits:
-        manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        manifest_path = manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
         if manifest_path.exists():
             with jsonlines.open(manifest_path) as reader:
                 all_manifests[split] = list(reader)
 
     if all_manifests:
-        _generate_distribution_summaries(all_manifests, figures_dir)
+        _generate_distribution_summaries(all_manifests, figures_dir, prefix)
 
 
-def generate_narrative_texts() -> None:
-    """Generates narrative text content from pre-generated manifests on Modal."""
+def generate_narrative_texts(prefix: str) -> None:
     options_dir = Path("/root/assets/narrative_options")
     prompt_template = (options_dir / "prompt.txt").read_text()
 
@@ -209,11 +197,11 @@ def generate_narrative_texts() -> None:
     for split in splits:
         print(f"Starting generation for {split} split...")
         narratives_dir = (
-            base_dir / ("train" if split == "train" else "test") / "narratives"
+            base_dir / ("train" if split in ["train", "val"] else "test") / f"{prefix}_narratives"
         )
         narratives_dir.mkdir(parents=True, exist_ok=True)
 
-        narrative_manifest_path = manifests_dir / f"narrative_split_{split}.jsonl"
+        narrative_manifest_path = manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
         if not narrative_manifest_path.exists():
             continue
 
@@ -227,19 +215,18 @@ def generate_narrative_texts() -> None:
         )
         print(f"  Completed {split} split: {total_entries} narratives generated")
 
-    print("\n✓ Narrative text generation complete!")
+    print(f"\n✓ Narrative text generation complete for {prefix}!")
 
 
-def verify_narrative_manifests() -> None:
-    """Verifies narrative manifests for data quality and quota adherence."""
-    print("\nVerifying narrative manifests...")
+def verify_narrative_manifests(prefix: str) -> None:
+    print(f"\nVerifying {prefix} narrative manifests...")
     manifests_dir = Path("assets/manifests")
 
     if not manifests_dir.exists():
         print("  ⚠ Manifests directory not found. Run generation first.")
         return
 
-    manifest_files = list(manifests_dir.glob("narrative_split_*.jsonl"))
+    manifest_files = list(manifests_dir.glob(f"{prefix}_narratives_split_*.jsonl"))
 
     if not manifest_files:
         print("  ⚠ No narrative manifest files found.")
@@ -247,7 +234,7 @@ def verify_narrative_manifests() -> None:
 
     all_manifests = {}
     for manifest_file in sorted(manifest_files):
-        split_name = manifest_file.stem.replace("narrative_split_", "")
+        split_name = manifest_file.stem.replace(f"{prefix}_narratives_split_", "")
         print(f"\n  Verifying {split_name} manifest...")
 
         entries = []
@@ -260,7 +247,7 @@ def verify_narrative_manifests() -> None:
         if missing_texts > 0:
             print(f"    ⚠ WARNING: {missing_texts} text files not found")
         else:
-            print(f"    ✓ All text files exist")
+            print("    ✓ All text files exist")
 
         symptom_counts = {0: 0, 1: 0, 2: 0, 3: 0}
 
@@ -269,7 +256,7 @@ def verify_narrative_manifests() -> None:
 
             symptom_counts[num_symptoms] = symptom_counts.get(num_symptoms, 0) + 1
 
-        print(f"    Symptom count distribution:")
+        print("    Symptom count distribution:")
         for num, count in sorted(symptom_counts.items()):
             pct = (count / len(entries)) * 100
             print(f"      {num} symptoms: {count} ({pct:.1f}%)")
@@ -281,30 +268,19 @@ def verify_narrative_manifests() -> None:
     print("\nGenerating distribution visualizations...")
     figures_dir = Path("assets/figures")
     figures_dir.mkdir(parents=True, exist_ok=True)
-    _generate_distribution_summaries(all_manifests, figures_dir)
+    _generate_distribution_summaries(all_manifests, figures_dir, prefix)
     print(f"Visualizations saved to {figures_dir}")
 
 
 def _generate_distribution_summaries(
-    manifests: dict[str, list[dict]], output_dir: Path
+    manifests: dict[str, list[dict]], output_dir: Path, prefix: str
 ) -> None:
-    """Generates and saves narrative distribution visualizations.
-
-    Args:
-        manifests: Dictionary with split names as keys and manifest entries as values.
-        output_dir: Directory to save visualization images.
-    """
-    label_names = {
-        label_id: config["name"] for label_id, config in ISIC19_LABEL_CONFIG.items()
-    }
-
-    _plot_symptom_distribution(manifests, label_names, output_dir)
+    _plot_symptom_distribution(manifests, output_dir, prefix)
 
 
 def _plot_symptom_distribution(
-    manifests: dict[str, list[dict]], label_names: dict, output_dir: Path
+    manifests: dict[str, list[dict]], output_dir: Path, prefix: str
 ) -> None:
-    """Plots symptom count distribution across splits."""
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
     symptom_counts_range = [0, 1, 2, 3]
@@ -344,5 +320,5 @@ def _plot_symptom_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "balance_symptoms.png", dpi=150)
+    plt.savefig(output_dir / f"{prefix}_balance_symptoms.png", dpi=150)
     plt.close()
