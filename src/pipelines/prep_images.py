@@ -43,7 +43,7 @@ def deduplicate_images(
     df: pl.DataFrame,
     config: DatasetConfig,
     images_dir: Path,
-    max_distance_threshold: int = 5,
+    max_distance_threshold: int = 2,
 ) -> pl.DataFrame:
     image_ids = df.select(config.image_id_column).to_series().to_list()
     existing_images = set()
@@ -56,7 +56,7 @@ def deduplicate_images(
         return df
 
     hasher = PHash()
-    encodings = hasher.encode_images(image_dir=str(images_dir), num_enc_workers=4)
+    encodings = hasher.encode_images(image_dir=str(images_dir), num_enc_workers=8)
     filtered_encodings = {
         k: v for k, v in encodings.items() if k.replace(".jpg", "") in existing_images
     }
@@ -251,7 +251,7 @@ def create_train_val_splits(
     config: DatasetConfig,
     data_dir: Path,
     train_ratio: float = 0.9,
-    max_distance_threshold: int = 5,
+    max_distance_threshold: int = 2,
 ) -> dict[str, pl.DataFrame]:
     metadata_path = data_dir / "metadata.csv"
     images_dir = data_dir / "images"
@@ -283,7 +283,7 @@ def create_train_val_splits(
 def create_test_split(
     config: DatasetConfig,
     data_dir: Path,
-    max_distance_threshold: int = 5,
+    max_distance_threshold: int = 2,
 ) -> dict[str, pl.DataFrame]:
     metadata_path = data_dir / "metadata.csv"
     images_dir = data_dir / "images"
@@ -333,7 +333,7 @@ def df_to_manifest(
 def create_manifests(
     config: DatasetConfig,
     train_ratio: float = 0.9,
-    max_distance_threshold: int = 5,
+    max_distance_threshold: int = 2,
 ) -> None:
     print(f"Starting {config.name} data processing pipeline...")
     train_data_dir = Path(f"/data/raw/train/{config.name}")

@@ -59,7 +59,7 @@ def verify_download(dataset: str) -> None:
     _verify_download(config)
 
 
-@app.function(cpu=4, timeout=86400)
+@app.function(cpu=4, memory=4096, timeout=86400)
 def create_manifests(dataset: str) -> None:
     config = DATASET_CONFIGS[dataset]
     _create_manifests(config, train_ratio=0.9)
