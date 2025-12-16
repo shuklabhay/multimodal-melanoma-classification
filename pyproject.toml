@@ -8,6 +8,7 @@ dependencies = [
     "aiofiles>=25.1.0",
     "aiolimiter>=1.2.1",
     "flax>=0.12.1",
+    "imagededup>=0.3.3.post2",
     "isic-cli>=12.4.0",
     "jax[cuda12]>=0.8.1 ; sys_platform == 'linux'",
     "jsonlines>=4.0.0",

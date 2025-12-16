@@ -130,7 +130,9 @@ def create_local_narrative_manifests(config: DatasetConfig) -> None:
         with jsonlines.open(image_manifest_path) as reader:
             image_entries = list(reader)
 
-        narrative_manifest_path = manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
+        narrative_manifest_path = (
+            manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
+        )
         narrative_entries = []
 
         for entry in image_entries:
@@ -147,7 +149,9 @@ def create_local_narrative_manifests(config: DatasetConfig) -> None:
                 "text_path": text_path,
                 "text": "",
                 "label": label,
-                config.id_column_for_manifest: entry.get(config.id_column_for_manifest, ""),
+                config.id_column_for_manifest: entry.get(
+                    config.id_column_for_manifest, ""
+                ),
                 "style": params["style"],
                 "memory": params["memory"],
                 "memory_category": params["memory_category"],
@@ -197,11 +201,15 @@ def generate_narrative_texts(prefix: str) -> None:
     for split in splits:
         print(f"Starting generation for {split} split...")
         narratives_dir = (
-            base_dir / ("train" if split in ["train", "val"] else "test") / f"{prefix}_narratives"
+            base_dir
+            / ("train" if split in ["train", "val"] else "test")
+            / f"{prefix}_narratives"
         )
         narratives_dir.mkdir(parents=True, exist_ok=True)
 
-        narrative_manifest_path = manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
+        narrative_manifest_path = (
+            manifests_dir / f"{prefix}_narratives_split_{split}.jsonl"
+        )
         if not narrative_manifest_path.exists():
             continue
 

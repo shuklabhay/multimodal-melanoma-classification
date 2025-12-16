@@ -83,7 +83,16 @@ def _handle_isic2019_submenu() -> None:
         create_local_narrative_manifests(ISIC2019_CONFIG)
         visualize_narrative_manifests(ISIC2019_CONFIG)
         subprocess.run(
-            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint", "--dataset", "isic2019"],
+            [
+                "uv",
+                "run",
+                "modal",
+                "run",
+                "-m",
+                "src.use_modal::narratives_entrypoint",
+                "--dataset",
+                "isic2019",
+            ],
             check=True,
         )
 
@@ -124,7 +133,16 @@ def _handle_milk10k_submenu() -> None:
         create_local_narrative_manifests(MILK10K_CONFIG)
         visualize_narrative_manifests(MILK10K_CONFIG)
         subprocess.run(
-            ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint", "--dataset", "milk10k"],
+            [
+                "uv",
+                "run",
+                "modal",
+                "run",
+                "-m",
+                "src.use_modal::narratives_entrypoint",
+                "--dataset",
+                "milk10k",
+            ],
             check=True,
         )
 
@@ -200,9 +218,9 @@ def _create_text_embeddings() -> None:
     buffer_map = {}
     for source in selected:
         for split in ["train", "val", "test"]:
-            buffer_map[f"{source}_text_embeddings_split_{split}.jsonl"] = (
-                f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
-            )
+            buffer_map[
+                f"{source}_text_embeddings_split_{split}.jsonl"
+            ] = f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
 
     use_buffer(buffer_map)
     print("\n✓ Text embeddings created!")

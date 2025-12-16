@@ -6,6 +6,7 @@ from typing import cast
 import jsonlines
 import matplotlib.pyplot as plt
 import polars as pl
+from imagededup.methods import CNN
 from tqdm import tqdm
 
 from src.pipelines.label_config import (
@@ -54,6 +55,61 @@ def filter_by_label(df: pl.DataFrame, config: DatasetConfig) -> pl.DataFrame:
     return df_with_flag.filter(pl.col("_can_map")).drop("_can_map")
 
 
+def deduplicate_images(
+    df: pl.DataFrame,
+    config: DatasetConfig,
+    images_dir: Path,
+    similarity_threshold: float = 0.93,
+) -> pl.DataFrame:
+    print(f"\nRunning CNN-based deduplication (threshold={similarity_threshold})...")
+
+    image_ids = df.select(config.image_id_column).to_series().to_list()
+    existing_images = []
+    for image_id in image_ids:
+        img_path = images_dir / f"{image_id}.jpg"
+        if img_path.exists():
+            existing_images.append(image_id)
+
+    if not existing_images:
+        print("  No images found for deduplication")
+        return df
+
+    print(f"  Encoding {len(existing_images)} images...")
+
+    cnn = CNN()
+    encodings = cnn.encode_images(image_dir=str(images_dir))
+
+    filtered_encodings = {
+        k: v for k, v in encodings.items() if k.replace(".jpg", "") in existing_images
+    }
+
+    if not filtered_encodings:
+        print("  No encodings generated")
+        return df
+
+    duplicates = cnn.find_duplicates(
+        encoding_map=filtered_encodings,
+        min_similarity_threshold=similarity_threshold,
+    )
+
+    to_remove = set()
+    for img, dups in duplicates.items():
+        for dup in dups:
+            if img < dup:
+                to_remove.add(dup.replace(".jpg", ""))
+            else:
+                to_remove.add(img.replace(".jpg", ""))
+
+    print(f"  Found {len(to_remove)} duplicate images to remove")
+
+    if to_remove:
+        df_deduped = df.filter(~pl.col(config.image_id_column).is_in(list(to_remove)))
+        print(f"  Kept {len(df_deduped)} images after deduplication")
+        return df_deduped
+
+    return df
+
+
 ISIC2019_CONFIG = DatasetConfig(
     name="isic2019",
     train_collection_id=65,
@@ -62,6 +118,7 @@ ISIC2019_CONFIG = DatasetConfig(
     diagnosis_columns=["diagnosis_2", "diagnosis_3"],
     split_by_column="patient_id",
     id_column_for_manifest="patient_id",
+    image_id_column="isic_id",
     expected_train_count=25331,
     expected_test_count=8238,
     extra_filters=[filter_by_filename],
@@ -74,6 +131,7 @@ MILK10K_CONFIG = DatasetConfig(
     diagnosis_columns=["diagnosis_1", "diagnosis_2", "diagnosis_3"],
     split_by_column="lesion_id",
     id_column_for_manifest="lesion_id",
+    image_id_column="isic_id",
     expected_train_count=10480,
     expected_test_count=958,
     extra_filters=[filter_clinical_only],
@@ -214,13 +272,23 @@ def verify_download(config: DatasetConfig) -> None:
 
 
 def split_by_column(
-    df: pl.DataFrame, column: str, train_ratio: float = 0.9
+    df: pl.DataFrame,
+    config: DatasetConfig,
+    train_ratio: float = 0.9,
 ) -> dict[str, pl.DataFrame]:
     df_filled = df.with_columns(
-        pl.col(column).fill_null(pl.format(f"unknown_{{}}", pl.col("isic_id")))
+        pl.col(config.split_by_column).fill_null(
+            pl.format(f"unknown_{{}}", pl.col(config.image_id_column))
+        )
     )
 
-    unique_ids = df_filled.select(column).unique().sort(column).to_series().to_list()
+    unique_ids = (
+        df_filled.select(config.split_by_column)
+        .unique()
+        .sort(config.split_by_column)
+        .to_series()
+        .to_list()
+    )
     random.seed(42)
     random.shuffle(unique_ids)
 
@@ -228,16 +296,20 @@ def split_by_column(
     train_ids = set(unique_ids[:split_idx])
     val_ids = set(unique_ids[split_idx:])
 
-    train_df = df_filled.filter(pl.col(column).is_in(train_ids))
-    val_df = df_filled.filter(pl.col(column).is_in(val_ids))
+    train_df = df_filled.filter(pl.col(config.split_by_column).is_in(train_ids))
+    val_df = df_filled.filter(pl.col(config.split_by_column).is_in(val_ids))
 
     return {"train": train_df, "val": val_df}
 
 
 def create_train_val_splits(
-    config: DatasetConfig, data_dir: Path, train_ratio: float = 0.9
+    config: DatasetConfig,
+    data_dir: Path,
+    train_ratio: float = 0.9,
+    similarity_threshold: float = 0.93,
 ) -> dict[str, pl.DataFrame]:
     metadata_path = data_dir / "metadata.csv"
+    images_dir = data_dir / "images"
 
     df = pl.read_csv(metadata_path)
     print(f"Initial dataset size: {len(df)}")
@@ -249,8 +321,10 @@ def create_train_val_splits(
     df = filter_by_label(df, config)
     print(f"After filter_by_label: {len(df)}")
 
-    df = df.sort("isic_id")
-    splits = split_by_column(df, config.split_by_column, train_ratio=train_ratio)
+    df = deduplicate_images(df, config, images_dir, similarity_threshold)
+
+    df = df.sort(config.image_id_column)
+    splits = split_by_column(df, config, train_ratio=train_ratio)
 
     unique_ids = len(df.select(config.split_by_column).unique())
     print(f"Total unique {config.split_by_column}s: {unique_ids}")
@@ -260,8 +334,13 @@ def create_train_val_splits(
     return splits
 
 
-def create_test_split(config: DatasetConfig, data_dir: Path) -> dict[str, pl.DataFrame]:
+def create_test_split(
+    config: DatasetConfig,
+    data_dir: Path,
+    similarity_threshold: float = 0.93,
+) -> dict[str, pl.DataFrame]:
     metadata_path = data_dir / "metadata.csv"
+    images_dir = data_dir / "images"
 
     df = pl.read_csv(metadata_path)
     print(f"Initial test dataset size: {len(df)}")
@@ -272,6 +351,8 @@ def create_test_split(config: DatasetConfig, data_dir: Path) -> dict[str, pl.Dat
 
     df = filter_by_label(df, config)
     print(f"After filter_by_label: {len(df)}")
+
+    df = deduplicate_images(df, config, images_dir, similarity_threshold)
 
     print(f"Final test split: {len(df)}")
 
@@ -288,8 +369,9 @@ def df_to_manifest(
         total=len(df),
         desc=f"Generating {config.name} manifests",
     ):
+        image_id = row.get(config.image_id_column, "")
         manifest_entry = {
-            "image_path": str(images_dir / f"{row.get('isic_id', '')}.jpg"),
+            "image_path": str(images_dir / f"{image_id}.jpg"),
             "label": row.get("label"),
             config.id_column_for_manifest: row.get(config.id_column_for_manifest, ""),
             "age_approx": row.get("age_approx"),
@@ -301,7 +383,11 @@ def df_to_manifest(
     return manifests
 
 
-def create_manifests(config: DatasetConfig, train_ratio: float = 0.9) -> None:
+def create_manifests(
+    config: DatasetConfig,
+    train_ratio: float = 0.9,
+    similarity_threshold: float = 0.93,
+) -> None:
     print(f"Starting {config.name} data processing pipeline...")
     train_data_dir = Path(f"/data/raw/train/{config.name}")
     test_data_dir = Path(f"/data/raw/test/{config.name}")
@@ -309,9 +395,16 @@ def create_manifests(config: DatasetConfig, train_ratio: float = 0.9) -> None:
     images_dir_test = test_data_dir / "images"
 
     train_val_splits = create_train_val_splits(
-        config, train_data_dir, train_ratio=train_ratio
+        config,
+        train_data_dir,
+        train_ratio=train_ratio,
+        similarity_threshold=similarity_threshold,
     )
-    test_split = create_test_split(config, test_data_dir)
+    test_split = create_test_split(
+        config,
+        test_data_dir,
+        similarity_threshold=similarity_threshold,
+    )
     splits = {**train_val_splits, **test_split}
 
     print("\nConverting to manifests...")
@@ -345,7 +438,9 @@ def create_manifests(config: DatasetConfig, train_ratio: float = 0.9) -> None:
         print(f"Saved {len(manifest_list)} entries to {manifest_path}")
 
     print("\nGenerating balance summaries...")
-    _generate_balance_summaries(splits_with_labels, buffer_dir, config.label_config, config.name)
+    _generate_balance_summaries(
+        splits_with_labels, buffer_dir, config.label_config, config.name
+    )
     print(f"\n✓ {config.name} manifests saved to {buffer_dir}")
 
 
