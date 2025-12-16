@@ -12,8 +12,12 @@ from src.utils.data_utils import use_buffer
 app = Typer()
 
 
-def _run_modal_images(dataset: str, step: str) -> None:
-    """Runs Modal images function for specified dataset and step."""
+def _run_modal_download_images(dataset: str) -> None:
+    """Runs Modal download_images function for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     subprocess.run(
         [
             "uv",
@@ -21,11 +25,30 @@ def _run_modal_images(dataset: str, step: str) -> None:
             "modal",
             "run",
             "-m",
-            "src.use_modal::images",
+            "src.use_modal::download_images",
             "--dataset",
             dataset,
-            "--step",
-            step,
+        ],
+        check=True,
+    )
+
+
+def _run_modal_verify_download(dataset: str) -> None:
+    """Runs Modal verify_download function for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::verify_download",
+            "--dataset",
+            dataset,
         ],
         check=True,
     )
@@ -63,9 +86,9 @@ def _handle_isic2019_submenu() -> None:
     choice = input("\nEnter your choice: ").strip()
 
     if choice == "1":
-        _run_modal_images("isic2019", "download")
+        _run_modal_download_images("isic2019")
     elif choice == "2":
-        _run_modal_images("isic2019", "verify_download")
+        _run_modal_verify_download("isic2019")
     elif choice == "3":
         _run_modal_create_manifests("isic2019")
         use_buffer(
@@ -114,9 +137,9 @@ def _handle_milk10k_submenu() -> None:
     choice = input("\nEnter your choice: ").strip()
 
     if choice == "1":
-        _run_modal_images("milk10k", "download")
+        _run_modal_download_images("milk10k")
     elif choice == "2":
-        _run_modal_images("milk10k", "verify_download")
+        _run_modal_verify_download("milk10k")
     elif choice == "3":
         _run_modal_create_manifests("milk10k")
         use_buffer(
