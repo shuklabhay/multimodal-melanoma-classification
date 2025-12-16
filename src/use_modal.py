@@ -2,12 +2,11 @@ import modal
 from modal import App, Image, Volume
 
 from src.pipelines.prep_embeddings import create_narrative_embeddings
+from src.pipelines.dataset_config import ISIC2019_CONFIG, MILK10K_CONFIG
 from src.pipelines.prep_images import (
-    ISIC2019_CONFIG,
-    MILK10K_CONFIG,
-    create_manifests,
-    download_dataset,
-    verify_download,
+    create_manifests as _create_manifests,
+    download_dataset as _download_dataset,
+    verify_download as _verify_download,
 )
 from src.pipelines.prep_narratives import generate_narrative_texts
 
@@ -49,31 +48,32 @@ DATASET_CONFIGS = {
 
 
 @app.function(timeout=86400)
-def images(dataset: str, step: str) -> None:
+def download_images(dataset: str) -> None:
     config = DATASET_CONFIGS[dataset]
-    if step in ["all", "download"]:
-        download_dataset(config)
-    if step in ["all", "verify_download"]:
-        verify_download(config)
+    _download_dataset(config)
 
 
 @app.function(timeout=86400)
-def process_images(dataset: str) -> None:
+def verify_download(dataset: str) -> None:
     config = DATASET_CONFIGS[dataset]
-    create_manifests(config, train_ratio=0.9)
+    _verify_download(config)
+
+
+@app.function(cpu=4, timeout=86400)
+def create_manifests(dataset: str) -> None:
+    config = DATASET_CONFIGS[dataset]
+    _create_manifests(config, train_ratio=0.9)
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def process_narratives() -> None:
-    """Generates narratives from pre-generated manifests using Nous API."""
-    generate_narrative_texts()
+def generate_narratives(dataset: str) -> None:
+    generate_narrative_texts(dataset)
 
 
 @app.local_entrypoint()
-def narratives_entrypoint() -> None:
-    """Local entrypoint to generate narratives."""
-    print("Calling Modal to generate narrative texts...")
-    process_narratives.remote()
+def narratives_entrypoint(dataset: str) -> None:
+    print(f"Calling Modal to generate narrative texts for {dataset}...")
+    generate_narratives.remote(dataset)
     print("✓ Narrative text generation complete on Modal")
 
 

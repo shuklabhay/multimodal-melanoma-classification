@@ -9,7 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
 from src.models.backbones import ResNet50Backbone
-from src.pipelines.label_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
+from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
 
 
 def load_bundle_raw(bundle_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

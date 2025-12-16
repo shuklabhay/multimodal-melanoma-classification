@@ -5,7 +5,7 @@ from pathlib import Path
 import jsonlines
 import matplotlib.pyplot as plt
 
-from src.pipelines.label_config import SPLIT_COLORS, DatasetConfig
+from src.pipelines.dataset_config import SPLIT_COLORS, DatasetConfig
 from src.utils.llm_utils import process_narrative_entries
 
 MEMORY_QUOTAS = {

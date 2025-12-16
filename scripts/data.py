@@ -31,7 +31,7 @@ def _run_modal_images(dataset: str, step: str) -> None:
     )
 
 
-def _run_modal_process_images(dataset: str) -> None:
+def _run_modal_create_manifests(dataset: str) -> None:
     subprocess.run(
         [
             "uv",
@@ -39,7 +39,7 @@ def _run_modal_process_images(dataset: str) -> None:
             "modal",
             "run",
             "-m",
-            "src.use_modal::process_images",
+            "src.use_modal::create_manifests",
             "--dataset",
             dataset,
         ],
@@ -61,7 +61,7 @@ def _handle_isic2019_submenu() -> None:
     elif choice == "2":
         _run_modal_images("isic2019", "verify_download")
     elif choice == "3":
-        _run_modal_process_images("isic2019")
+        _run_modal_create_manifests("isic2019")
         use_buffer(
             {
                 "isic2019_split_train.jsonl": "assets/manifests/isic2019_split_train.jsonl",
@@ -74,7 +74,7 @@ def _handle_isic2019_submenu() -> None:
             }
         )
     elif choice == "4":
-        from src.pipelines.prep_images import ISIC2019_CONFIG
+        from src.pipelines.dataset_config import ISIC2019_CONFIG
         from src.pipelines.prep_narratives import (
             create_local_narrative_manifests,
             visualize_narrative_manifests,
@@ -111,7 +111,7 @@ def _handle_milk10k_submenu() -> None:
     elif choice == "2":
         _run_modal_images("milk10k", "verify_download")
     elif choice == "3":
-        _run_modal_process_images("milk10k")
+        _run_modal_create_manifests("milk10k")
         use_buffer(
             {
                 "milk10k_split_train.jsonl": "assets/manifests/milk10k_split_train.jsonl",
@@ -124,7 +124,7 @@ def _handle_milk10k_submenu() -> None:
             }
         )
     elif choice == "4":
-        from src.pipelines.prep_images import MILK10K_CONFIG
+        from src.pipelines.dataset_config import MILK10K_CONFIG
         from src.pipelines.prep_narratives import (
             create_local_narrative_manifests,
             visualize_narrative_manifests,

@@ -127,6 +127,7 @@ MILK10K_LABEL_CONFIG = {
         "name": "Vascular lesions and hemorrhage",
         "short": "VASC",
         "diagnoses": [
+            "vascular",
             "angiokeratoma",
             "arterio-venous",
             "hemangioma",
@@ -138,7 +139,7 @@ MILK10K_LABEL_CONFIG = {
     7: {
         "name": "Squamous cell carcinoma/keratoacanthoma",
         "short": "SCCKA",
-        "diagnoses": ["keratoacanthoma", "squamous cell carcinoma"],
+        "diagnoses": ["sccka", "keratoacanthoma", "squamous cell carcinoma"],
         "symptoms": "assets/narrative_options/symptoms/scc_symptoms.txt",
     },
     8: {
@@ -191,3 +192,43 @@ SPLIT_COLORS = {
     "val": "coral",
     "test": "lightgreen",
 }
+
+
+def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
+    return df.filter(
+        ~pl.col("isic_id").str.contains("_unknown")
+        & ~pl.col("isic_id").str.contains("_downsampled")
+    )
+
+
+def filter_clinical_only(df: pl.DataFrame) -> pl.DataFrame:
+    return df.filter(pl.col("image_type") == "clinical")
+
+
+ISIC2019_CONFIG = DatasetConfig(
+    name="isic2019",
+    train_collection_id=65,
+    test_collection_id=72,
+    label_config=ISIC19_LABEL_CONFIG,
+    diagnosis_columns=["diagnosis_2", "diagnosis_3"],
+    split_by_column="patient_id",
+    id_column_for_manifest="patient_id",
+    image_id_column="isic_id",
+    expected_train_count=25331,
+    expected_test_count=8238,
+    extra_filters=[filter_by_filename],
+)
+
+MILK10K_CONFIG = DatasetConfig(
+    name="milk10k",
+    train_collection_id=425,
+    test_collection_id=424,
+    label_config=MILK10K_LABEL_CONFIG,
+    diagnosis_columns=["diagnosis_1", "diagnosis_2", "diagnosis_3"],
+    split_by_column="lesion_id",
+    id_column_for_manifest="lesion_id",
+    image_id_column="isic_id",
+    expected_train_count=10480,
+    expected_test_count=958,
+    extra_filters=[filter_clinical_only],
+)

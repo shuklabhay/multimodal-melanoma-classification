@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import typer
 
-from src.pipelines.label_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
+from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
 
 app = typer.Typer()
 

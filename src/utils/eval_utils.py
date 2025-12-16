@@ -7,7 +7,7 @@ import wandb
 from flax import nnx, traverse_util
 from safetensors.flax import load_file, save_file
 
-from src.pipelines.label_config import ISIC19_LABEL_CONFIG
+from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG
 
 CHECKPOINT_BASE_DIR = "/data/checkpoints"
 
