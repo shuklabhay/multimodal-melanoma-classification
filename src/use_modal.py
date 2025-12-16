@@ -12,6 +12,7 @@ from src.pipelines.prep_narratives import generate_narrative_texts
 
 
 def download_sentence_transformer():
+    """Downloads and caches the sentence transformer model during image build."""
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
@@ -49,29 +50,54 @@ DATASET_CONFIGS = {
 
 @app.function(timeout=86400)
 def download_images(dataset: str) -> None:
+    """Downloads images and metadata for specified dataset from ISIC archive.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     config = DATASET_CONFIGS[dataset]
     _download_dataset(config)
 
 
 @app.function(timeout=86400)
 def verify_download(dataset: str) -> None:
+    """Verifies downloaded dataset by checking image counts and label mappings.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     config = DATASET_CONFIGS[dataset]
     _verify_download(config)
 
 
 @app.function(cpu=4, memory=4096, timeout=86400)
 def create_manifests(dataset: str) -> None:
+    """Creates train/val/test manifest files for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     config = DATASET_CONFIGS[dataset]
     _create_manifests(config, train_ratio=0.9)
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
 def generate_narratives(dataset: str) -> None:
+    """Generates narrative texts for specified dataset using LLM.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     generate_narrative_texts(dataset)
 
 
 @app.local_entrypoint()
 def narratives_entrypoint(dataset: str) -> None:
+    """Local entrypoint to trigger narrative generation on Modal.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     print(f"Calling Modal to generate narrative texts for {dataset}...")
     generate_narratives.remote(dataset)
     print("✓ Narrative text generation complete on Modal")

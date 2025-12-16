@@ -145,7 +145,13 @@ MILK10K_LABEL_CONFIG = {
     8: {
         "name": "Inflammatory and infectious",
         "short": "INF",
-        "diagnoses": ["inflammatory", "infectious", "molluscum", "porokeratosis", "verruca"],
+        "diagnoses": [
+            "inflammatory",
+            "infectious",
+            "molluscum",
+            "porokeratosis",
+            "verruca",
+        ],
         "symptoms": "assets/narrative_options/symptoms/inf_symptoms.txt",
     },
     9: {
@@ -195,6 +201,14 @@ SPLIT_COLORS = {
 
 
 def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
+    """Filters out rows with isic_id containing '_unknown' or '_downsampled'.
+
+    Args:
+        df: Input DataFrame with isic_id column.
+
+    Returns:
+        Filtered DataFrame excluding problematic image IDs.
+    """
     return df.filter(
         ~pl.col("isic_id").str.contains("_unknown")
         & ~pl.col("isic_id").str.contains("_downsampled")
@@ -202,7 +216,15 @@ def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def filter_clinical_only(df: pl.DataFrame) -> pl.DataFrame:
-    return df.filter(pl.col("image_type") == "clinical")
+    """Filters DataFrame to include only clinical image types.
+
+    Args:
+        df: Input DataFrame with image_type column.
+
+    Returns:
+        Filtered DataFrame containing only clinical images.
+    """
+    return df.filter(pl.col("image_type").str.to_lowercase().str.contains("clinical"))
 
 
 ISIC2019_CONFIG = DatasetConfig(

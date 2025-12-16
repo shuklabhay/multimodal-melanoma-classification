@@ -32,6 +32,11 @@ def _run_modal_images(dataset: str, step: str) -> None:
 
 
 def _run_modal_create_manifests(dataset: str) -> None:
+    """Runs Modal create_manifests function for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     subprocess.run(
         [
             "uv",
@@ -48,6 +53,7 @@ def _run_modal_create_manifests(dataset: str) -> None:
 
 
 def _handle_isic2019_submenu() -> None:
+    """Displays and handles ISIC2019 dataset operations submenu."""
     print("\n=== ISIC2019 Operations ===")
     print("  1. Download images")
     print("  2. Verify download")
@@ -98,6 +104,7 @@ def _handle_isic2019_submenu() -> None:
 
 
 def _handle_milk10k_submenu() -> None:
+    """Displays and handles MILK10k dataset operations submenu."""
     print("\n=== MILK10k Operations ===")
     print("  1. Download images")
     print("  2. Verify download")

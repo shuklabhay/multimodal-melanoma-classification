@@ -81,6 +81,17 @@ def select_narrative_parameters(
     rng: random.Random,
     config: DatasetConfig,
 ) -> dict:
+    """Randomly selects narrative generation parameters for a given label.
+
+    Args:
+        label: Integer label for the lesion class.
+        narrative_options: Dictionary containing available styles, memory types, etc.
+        rng: Random number generator for reproducible selection.
+        config: Dataset configuration with label-specific symptom files.
+
+    Returns:
+        Dictionary containing selected style, memory, temporal_quantifier, symptoms, and structure.
+    """
     symptoms_file = config.label_config[label]["symptoms"]
     available_symptoms = load_text_file(symptoms_file)
 
@@ -113,6 +124,11 @@ def select_narrative_parameters(
 
 
 def create_local_narrative_manifests(config: DatasetConfig) -> None:
+    """Creates narrative manifest files for each split by assigning generation parameters.
+
+    Args:
+        config: Dataset configuration specifying manifest paths and label config.
+    """
     options_dir = Path("assets/narrative_options")
     narrative_options = load_narrative_options(options_dir)
 
@@ -172,6 +188,11 @@ def create_local_narrative_manifests(config: DatasetConfig) -> None:
 
 
 def visualize_narrative_manifests(config: DatasetConfig) -> None:
+    """Generates distribution visualizations from narrative manifests.
+
+    Args:
+        config: Dataset configuration specifying manifest paths and prefix.
+    """
     manifests_dir = Path("assets/manifests")
     figures_dir = Path("assets/figures")
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -191,6 +212,11 @@ def visualize_narrative_manifests(config: DatasetConfig) -> None:
 
 
 def generate_narrative_texts(prefix: str) -> None:
+    """Generates narrative texts for all splits using LLM and saves to text files.
+
+    Args:
+        prefix: Dataset prefix (e.g., 'isic2019') used for manifest naming.
+    """
     options_dir = Path("/root/assets/narrative_options")
     prompt_template = (options_dir / "prompt.txt").read_text()
 
@@ -227,6 +253,11 @@ def generate_narrative_texts(prefix: str) -> None:
 
 
 def verify_narrative_manifests(prefix: str) -> None:
+    """Verifies narrative manifests exist and reports symptom distribution statistics.
+
+    Args:
+        prefix: Dataset prefix (e.g., 'isic2019') used for manifest naming.
+    """
     print(f"\nVerifying {prefix} narrative manifests...")
     manifests_dir = Path("assets/manifests")
 
@@ -283,12 +314,26 @@ def verify_narrative_manifests(prefix: str) -> None:
 def _generate_distribution_summaries(
     manifests: dict[str, list[dict]], output_dir: Path, prefix: str
 ) -> None:
+    """Generates and saves distribution summary plots for narrative manifests.
+
+    Args:
+        manifests: Dictionary mapping split names to lists of manifest entries.
+        output_dir: Directory to save generated figures.
+        prefix: Dataset prefix for output filename.
+    """
     _plot_symptom_distribution(manifests, output_dir, prefix)
 
 
 def _plot_symptom_distribution(
     manifests: dict[str, list[dict]], output_dir: Path, prefix: str
 ) -> None:
+    """Plots symptom count distribution across splits as grouped bar chart.
+
+    Args:
+        manifests: Dictionary mapping split names to lists of manifest entries.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
     symptom_counts_range = [0, 1, 2, 3]

@@ -159,7 +159,7 @@ def select_checkpoint(checkpoints: list[dict]) -> dict | None:
 
 
 def resume() -> None:
-    """Resume training from a checkpoint."""
+    """Resumes training from a selected checkpoint by prompting user and launching Modal."""
     checkpoints = fetch_checkpoints()
     checkpoint = select_checkpoint(checkpoints)
 
@@ -202,7 +202,7 @@ def resume() -> None:
 
 
 def bundle() -> None:
-    """Bundle data splits into NPZ files on Modal."""
+    """Bundles data splits into NPZ files by launching bundling job on Modal."""
     print("\nStarting data bundling on Modal...")
     subprocess.run(
         [

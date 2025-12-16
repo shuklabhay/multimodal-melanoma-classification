@@ -28,6 +28,15 @@ FIGURES_DIR = Path(__file__).parent.parent / "assets" / "figures"
 
 
 def build_confusion_matrix(df: pl.DataFrame, classes: list[str]) -> np.ndarray:
+    """Builds a confusion matrix from prediction DataFrame.
+
+    Args:
+        df: DataFrame with 'Actual', 'Predicted', and 'nPredictions' columns.
+        classes: List of class names in sorted order.
+
+    Returns:
+        Confusion matrix as 2D numpy array of shape (n_classes, n_classes).
+    """
     cm = np.zeros((len(classes), len(classes)), dtype=int)
     for row in df.iter_rows(named=True):
         i = classes.index(row["Actual"])
@@ -37,6 +46,14 @@ def build_confusion_matrix(df: pl.DataFrame, classes: list[str]) -> np.ndarray:
 
 
 def fdr_correction(pvals: np.ndarray) -> np.ndarray:
+    """Applies Benjamini-Hochberg FDR correction to p-values.
+
+    Args:
+        pvals: Array of raw p-values.
+
+    Returns:
+        Array of FDR-corrected p-values with same shape as input.
+    """
     pvals = np.array(pvals).flatten()
     n = len(pvals)
     sorted_idx = np.argsort(pvals)
@@ -50,6 +67,15 @@ def fdr_correction(pvals: np.ndarray) -> np.ndarray:
 
 
 def compute_pvalues(cm_a: np.ndarray, cm_b: np.ndarray) -> np.ndarray:
+    """Computes p-values for pairwise proportion comparison between confusion matrices.
+
+    Args:
+        cm_a: Confusion matrix for model A.
+        cm_b: Confusion matrix for model B.
+
+    Returns:
+        Matrix of p-values of shape (n_classes, n_classes).
+    """
     n_classes = cm_a.shape[0]
     pvals = np.ones((n_classes, n_classes))
     for i in range(n_classes):
@@ -74,6 +100,15 @@ def generate_heatmap(
     model_b_name: str,
     output_path: Path,
 ) -> None:
+    """Generates confusion difference heatmap comparing two models.
+
+    Args:
+        model_a_csv: Path to Model A results CSV.
+        model_b_csv: Path to Model B results CSV.
+        model_a_name: Display name for Model A.
+        model_b_name: Display name for Model B.
+        output_path: Path to save the output image.
+    """
     model_a = pl.read_csv(model_a_csv)
     model_b = pl.read_csv(model_b_csv)
 

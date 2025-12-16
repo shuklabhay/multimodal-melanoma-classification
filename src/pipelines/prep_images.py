@@ -13,6 +13,15 @@ from src.pipelines.dataset_config import SPLIT_COLORS, DatasetConfig
 
 
 def _can_map_label(row: dict, config: DatasetConfig) -> bool:
+    """Checks if a row's diagnosis can be mapped to a label in the config.
+
+    Args:
+        row: Dictionary containing diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
+
+    Returns:
+        True if the diagnosis can be mapped to a label, False otherwise.
+    """
     combined = " ".join(
         [
             str(row.get(col, "")).lower()
@@ -28,6 +37,15 @@ def _can_map_label(row: dict, config: DatasetConfig) -> bool:
 
 
 def filter_by_label(df: pl.DataFrame, config: DatasetConfig) -> pl.DataFrame:
+    """Filters DataFrame to only include rows with mappable diagnosis labels.
+
+    Args:
+        df: Input DataFrame with diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
+
+    Returns:
+        Filtered DataFrame containing only rows with valid label mappings.
+    """
     df_with_flag = df.with_columns(
         pl.struct(config.diagnosis_columns)
         .map_elements(
@@ -45,6 +63,17 @@ def deduplicate_images(
     images_dir: Path,
     max_distance_threshold: int = 2,
 ) -> pl.DataFrame:
+    """Removes duplicate images using perceptual hashing.
+
+    Args:
+        df: Input DataFrame with image IDs.
+        config: Dataset configuration with image ID column name.
+        images_dir: Directory containing image files.
+        max_distance_threshold: Maximum hash distance to consider images as duplicates.
+
+    Returns:
+        DataFrame with duplicate images removed.
+    """
     image_ids = df.select(config.image_id_column).to_series().to_list()
     existing_images = set()
     for image_id in image_ids:
@@ -84,6 +113,12 @@ def deduplicate_images(
 
 
 def download_from_isic_archive(collection_id: int, output_dir: Path) -> None:
+    """Downloads metadata and images from ISIC archive for a collection.
+
+    Args:
+        collection_id: ISIC archive collection ID to download.
+        output_dir: Directory to save downloaded metadata and images.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"  Downloading metadata for collection {collection_id}...")
@@ -115,6 +150,15 @@ def download_from_isic_archive(collection_id: int, output_dir: Path) -> None:
 
 
 def get_label_from_row(row: dict, config: DatasetConfig) -> int:
+    """Extracts integer label from a row based on diagnosis columns.
+
+    Args:
+        row: Dictionary containing diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
+
+    Returns:
+        Integer label corresponding to the diagnosis.
+    """
     combined = " ".join(
         [
             str(row.get(col, "")).lower()
@@ -133,6 +177,11 @@ def get_label_from_row(row: dict, config: DatasetConfig) -> int:
 
 
 def download_dataset(config: DatasetConfig) -> None:
+    """Downloads train and test datasets from ISIC archive.
+
+    Args:
+        config: Dataset configuration with collection IDs and name.
+    """
     print(f"Downloading {config.name} datasets...")
     download_from_isic_archive(
         config.train_collection_id, Path(f"/data/raw/train/{config.name}")
@@ -144,6 +193,11 @@ def download_dataset(config: DatasetConfig) -> None:
 
 
 def verify_download(config: DatasetConfig) -> None:
+    """Verifies downloaded data by checking image counts, metadata, and label mappings.
+
+    Args:
+        config: Dataset configuration with expected counts and label mappings.
+    """
     print(f"\nVerifying {config.name} data...")
     base_dir = Path("/data/raw")
 
@@ -221,6 +275,16 @@ def split_by_column(
     config: DatasetConfig,
     train_ratio: float = 0.9,
 ) -> dict[str, pl.DataFrame]:
+    """Splits DataFrame into train/val sets by unique values in split column.
+
+    Args:
+        df: Input DataFrame to split.
+        config: Dataset configuration with split_by_column and image_id_column.
+        train_ratio: Fraction of unique IDs to use for training.
+
+    Returns:
+        Dictionary with 'train' and 'val' DataFrames.
+    """
     df_filled = df.with_columns(
         pl.col(config.split_by_column).fill_null(
             pl.format(f"unknown_{{}}", pl.col(config.image_id_column))
@@ -253,6 +317,17 @@ def create_train_val_splits(
     train_ratio: float = 0.9,
     max_distance_threshold: int = 2,
 ) -> dict[str, pl.DataFrame]:
+    """Creates train/val splits from training data with filtering and deduplication.
+
+    Args:
+        config: Dataset configuration with filters and label mappings.
+        data_dir: Directory containing metadata.csv and images subdirectory.
+        train_ratio: Fraction of unique IDs to use for training.
+        max_distance_threshold: Maximum hash distance for image deduplication.
+
+    Returns:
+        Dictionary with 'train' and 'val' DataFrames.
+    """
     metadata_path = data_dir / "metadata.csv"
     images_dir = data_dir / "images"
 
@@ -285,6 +360,16 @@ def create_test_split(
     data_dir: Path,
     max_distance_threshold: int = 2,
 ) -> dict[str, pl.DataFrame]:
+    """Creates test split from test data with filtering and deduplication.
+
+    Args:
+        config: Dataset configuration with filters and label mappings.
+        data_dir: Directory containing metadata.csv and images subdirectory.
+        max_distance_threshold: Maximum hash distance for image deduplication.
+
+    Returns:
+        Dictionary with 'test' DataFrame.
+    """
     metadata_path = data_dir / "metadata.csv"
     images_dir = data_dir / "images"
 
@@ -309,6 +394,16 @@ def create_test_split(
 def df_to_manifest(
     df: pl.DataFrame, images_dir: Path, config: DatasetConfig
 ) -> list[dict]:
+    """Converts DataFrame rows to manifest entry dictionaries.
+
+    Args:
+        df: DataFrame with image metadata and labels.
+        images_dir: Directory containing image files.
+        config: Dataset configuration with column names.
+
+    Returns:
+        List of manifest entry dictionaries with image paths and metadata.
+    """
     manifests = []
 
     for row in tqdm(
@@ -335,6 +430,13 @@ def create_manifests(
     train_ratio: float = 0.9,
     max_distance_threshold: int = 2,
 ) -> None:
+    """Creates train/val/test manifest files from raw data with full processing pipeline.
+
+    Args:
+        config: Dataset configuration with collection IDs, filters, and label mappings.
+        train_ratio: Fraction of unique IDs to use for training.
+        max_distance_threshold: Maximum hash distance for image deduplication.
+    """
     print(f"Starting {config.name} data processing pipeline...")
     train_data_dir = Path(f"/data/raw/train/{config.name}")
     test_data_dir = Path(f"/data/raw/test/{config.name}")
@@ -396,6 +498,13 @@ def generate_visualizations(
     manifests_dir: Path,
     output_dir: Path | None = None,
 ) -> None:
+    """Generates balance visualization plots from existing manifests.
+
+    Args:
+        config: Dataset configuration with label mappings.
+        manifests_dir: Directory containing manifest JSONL files.
+        output_dir: Directory to save figures, defaults to manifests_dir.
+    """
     if output_dir is None:
         output_dir = manifests_dir
 
@@ -492,6 +601,14 @@ def _generate_balance_summaries(
     label_config: dict,
     prefix: str,
 ) -> None:
+    """Generates and saves all balance summary plots for the dataset splits.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        output_dir: Directory to save generated figures.
+        label_config: Label configuration mapping IDs to names.
+        prefix: Dataset prefix for output filenames.
+    """
     label_names = {label_id: cfg["name"] for label_id, cfg in label_config.items()}
     plot_label_distribution(splits, label_names, output_dir, prefix)
     plot_site_distribution(splits, label_names, output_dir, prefix)
@@ -502,7 +619,14 @@ def _generate_balance_summaries(
 def plot_label_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test label distribution on one plot with different colors."""
+    """Plots train vs val vs test label distribution as grouped bar chart.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
     all_label_ids = sorted(label_names.keys())
@@ -552,7 +676,14 @@ def plot_label_distribution(
 def plot_site_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test site distribution side-by-side."""
+    """Plots anatomical site distribution by class as heatmaps for each split.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, axes = plt.subplots(1, 3, figsize=(30, 8))
 
     all_sites_set = set()
@@ -628,7 +759,14 @@ def plot_site_distribution(
 def plot_gender_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test gender distribution on one chart with grouped bars."""
+    """Plots gender distribution by class as grouped bar chart for all splits.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
     all_label_ids = sorted(label_names.keys())
@@ -715,7 +853,14 @@ def plot_gender_distribution(
 def plot_age_distribution(
     splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test age distribution on one chart with violin plots."""
+    """Plots age distribution by class as violin plots for all splits.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
     all_label_ids = sorted(label_names.keys())

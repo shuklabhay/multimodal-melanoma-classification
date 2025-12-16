@@ -12,6 +12,15 @@ from transformers.modeling_flax_outputs import (
 
 
 def recursive_to_nnx(data, variable_type):
+    """Recursively converts nested dicts to nnx.Dict with specified variable type for leaf values.
+
+    Args:
+        data: Nested dictionary structure or leaf value to convert.
+        variable_type: The nnx variable type (e.g., nnx.Param, nnx.BatchStat) to wrap leaf values.
+
+    Returns:
+        nnx.Dict structure with leaves wrapped in variable_type, or single wrapped value.
+    """
     if isinstance(data, dict):
         return nnx.Dict(
             {k: recursive_to_nnx(v, variable_type) for k, v in data.items()}
@@ -20,6 +29,14 @@ def recursive_to_nnx(data, variable_type):
 
 
 def recursive_from_nnx(node):
+    """Recursively converts nnx.Dict structures back to plain Python dicts with raw values.
+
+    Args:
+        node: An nnx.Dict, nnx variable, or raw value to convert.
+
+    Returns:
+        Plain Python dict with raw array values extracted from nnx wrappers.
+    """
     if isinstance(node, nnx.Dict):
         return {k: recursive_from_nnx(v) for k, v in node.items()}
     if hasattr(node, "value"):
@@ -71,11 +88,6 @@ class ResNet50Backbone(nnx.Module):
 
 class SentenceTransformerEncoder:
     def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
-        """Initializes sentence transformer for text embedding generation.
-
-        Args:
-            model_name: Name of the sentence transformer model to use.
-        """
         self.model: SentenceTransformer = SentenceTransformer(model_name)
 
     def encode_batch(
