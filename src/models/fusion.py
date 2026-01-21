@@ -31,6 +31,15 @@ class ResidualFiLMFusionBlock(nnx.Module):
     def __call__(
         self, image_features: jnp.ndarray, text_features: jnp.ndarray
     ) -> jnp.ndarray:
+        """Applies FiLM modulation to image features using text features with residual connection.
+
+        Args:
+            image_features: Image embeddings of shape (batch_size, image_dim).
+            text_features: Text embeddings of shape (batch_size, text_dim).
+
+        Returns:
+            Modulated features of shape (batch_size, image_dim) with residual connection.
+        """
         x = text_features
         if self.hidden is not None:
             x = nnx.relu(self.hidden(x))

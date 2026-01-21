@@ -8,12 +8,16 @@ import numpy as np
 import polars as pl
 import typer
 
-from src.pipelines.label_config import LABEL_CONFIG, SIMILAR_PAIRS
+from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG, ISIC19_SIMILAR_PAIRS
 
 app = typer.Typer()
 
-NAME_TO_SHORT: dict[str, str] = {v["name"]: v["short"] for v in LABEL_CONFIG.values()}
-SHORT_TO_NAME: dict[str, str] = {v["short"]: v["name"] for v in LABEL_CONFIG.values()}
+NAME_TO_SHORT: dict[str, str] = {
+    v["name"]: v["short"] for v in ISIC19_LABEL_CONFIG.values()
+}
+SHORT_TO_NAME: dict[str, str] = {
+    v["short"]: v["name"] for v in ISIC19_LABEL_CONFIG.values()
+}
 
 FIGURES_DIR = Path(__file__).parent.parent / "assets" / "figures"
 
@@ -108,7 +112,7 @@ def generate_bar_chart(
     pair_labels: list[str] = []
     pair_scores: dict[str, list[float]] = {color: [] for color in data}
 
-    for short_a, short_b in SIMILAR_PAIRS:
+    for short_a, short_b in ISIC19_SIMILAR_PAIRS:
         name_a = SHORT_TO_NAME.get(short_a)
         name_b = SHORT_TO_NAME.get(short_b)
         if name_a in classes and name_b in classes:

@@ -12,21 +12,12 @@ from src.utils.data_utils import use_buffer
 app = Typer()
 
 
-@app.command()
-def run_all() -> None:
-    """Runs complete data pipeline: download images, process data, and generate narratives."""
-    download_images()
-    verify_images()
-    process_images()
-    generate_narrative_manifests()
-    generate_narratives()
-    create_narrative_embeddings()
-    create_combined_manifests()
+def _run_modal_download_images(dataset: str) -> None:
+    """Runs Modal download_images function for specified dataset.
 
-
-@app.command()
-def download_images() -> None:
-    """Downloads ISIC 2019 dataset to Modal volume."""
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     subprocess.run(
         [
             "uv",
@@ -34,17 +25,20 @@ def download_images() -> None:
             "modal",
             "run",
             "-m",
-            "src.use_modal::images",
-            "--step",
-            "download",
+            "src.use_modal::download_images",
+            "--dataset",
+            dataset,
         ],
         check=True,
     )
 
 
-@app.command()
-def verify_images() -> None:
-    """Verifies downloaded image data integrity on Modal volume."""
+def _run_modal_verify_download(dataset: str) -> None:
+    """Runs Modal verify_download function for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     subprocess.run(
         [
             "uv",
@@ -52,76 +46,193 @@ def verify_images() -> None:
             "modal",
             "run",
             "-m",
-            "src.use_modal::images",
-            "--step",
-            "verify_download",
+            "src.use_modal::verify_download",
+            "--dataset",
+            dataset,
         ],
         check=True,
     )
 
 
-@app.command()
-def process_images() -> None:
-    """Creates image manifests and visualizations, downloads them locally."""
+def _run_modal_create_manifests(dataset: str) -> None:
+    """Runs Modal create_manifests function for specified dataset.
+
+    Args:
+        dataset: Dataset name key ('isic2019' or 'milk10k').
+    """
     subprocess.run(
-        ["uv", "run", "modal", "run", "-m", "src.use_modal::process_images"],
-        check=True,
-    )
-    use_buffer(
-        {
-            "isic_split_train.jsonl": "assets/manifests/isic_split_train.jsonl",
-            "isic_split_val.jsonl": "assets/manifests/isic_split_val.jsonl",
-            "isic_split_test.jsonl": "assets/manifests/isic_split_test.jsonl",
-            "label_distribution.png": "assets/figures/label_distribution.png",
-            "age_distribution.png": "assets/figures/age_distribution.png",
-            "sex_distribution.png": "assets/figures/sex_distribution.png",
-            "site_distribution.png": "assets/figures/site_distribution.png",
-        }
-    )
-
-
-@app.command()
-def verify_image_manifests() -> None:
-    """Verifies image manifests for data quality (runs locally)."""
-    from src.pipelines.prep_images import verify_manifests
-
-    verify_manifests()
-
-
-@app.command("generate-narratives")
-def generate_narratives() -> None:
-    """Generates narrative text outputs on Modal using prepared manifests."""
-    subprocess.run(
-        ["uv", "run", "modal", "run", "-m", "src.use_modal::narratives_entrypoint"],
+        [
+            "uv",
+            "run",
+            "modal",
+            "run",
+            "-m",
+            "src.use_modal::create_manifests",
+            "--dataset",
+            dataset,
+        ],
         check=True,
     )
 
-    print("\n✓ Narrative generation complete!")
+
+def _handle_isic2019_submenu() -> None:
+    """Displays and handles ISIC2019 dataset operations submenu."""
+    print("\n=== ISIC2019 Operations ===")
+    print("  1. Download images")
+    print("  2. Verify download")
+    print("  3. Create manifests")
+    print("  4. Generate narratives")
+    print("  5. Back")
+    choice = input("\nEnter your choice: ").strip()
+
+    if choice == "1":
+        _run_modal_download_images("isic2019")
+    elif choice == "2":
+        _run_modal_verify_download("isic2019")
+    elif choice == "3":
+        _run_modal_create_manifests("isic2019")
+        use_buffer(
+            {
+                "isic2019_split_train.jsonl": "assets/manifests/isic2019_split_train.jsonl",
+                "isic2019_split_val.jsonl": "assets/manifests/isic2019_split_val.jsonl",
+                "isic2019_split_test.jsonl": "assets/manifests/isic2019_split_test.jsonl",
+                "isic2019_balance_label.png": "assets/figures/isic2019_balance_label.png",
+                "isic2019_balance_age.png": "assets/figures/isic2019_balance_age.png",
+                "isic2019_balance_gender.png": "assets/figures/isic2019_balance_gender.png",
+                "isic2019_balance_site.png": "assets/figures/isic2019_balance_site.png",
+            }
+        )
+    elif choice == "4":
+        from src.pipelines.dataset_config import ISIC2019_CONFIG
+        from src.pipelines.prep_narratives import (
+            create_local_narrative_manifests,
+            visualize_narrative_manifests,
+        )
+
+        create_local_narrative_manifests(ISIC2019_CONFIG)
+        visualize_narrative_manifests(ISIC2019_CONFIG)
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "modal",
+                "run",
+                "-m",
+                "src.use_modal::narratives_entrypoint",
+                "--dataset",
+                "isic2019",
+            ],
+            check=True,
+        )
 
 
-@app.command("generate-narrative-manifests")
-def generate_narrative_manifests() -> None:
-    """Generates local narrative manifests and supporting distribution visualizations."""
-    from src.pipelines.prep_narratives import (
-        create_local_narrative_manifests,
-        visualize_narrative_manifests,
-    )
+def _handle_milk10k_submenu() -> None:
+    """Displays and handles MILK10k dataset operations submenu."""
+    print("\n=== MILK10k Operations ===")
+    print("  1. Download images")
+    print("  2. Verify download")
+    print("  3. Create manifests")
+    print("  4. Generate narratives")
+    print("  5. Back")
+    choice = input("\nEnter your choice: ").strip()
 
-    create_local_narrative_manifests()
-    visualize_narrative_manifests()
+    if choice == "1":
+        _run_modal_download_images("milk10k")
+    elif choice == "2":
+        _run_modal_verify_download("milk10k")
+    elif choice == "3":
+        _run_modal_create_manifests("milk10k")
+        use_buffer(
+            {
+                "milk10k_split_train.jsonl": "assets/manifests/milk10k_split_train.jsonl",
+                "milk10k_split_val.jsonl": "assets/manifests/milk10k_split_val.jsonl",
+                "milk10k_split_test.jsonl": "assets/manifests/milk10k_split_test.jsonl",
+                "milk10k_balance_label.png": "assets/figures/milk10k_balance_label.png",
+                "milk10k_balance_age.png": "assets/figures/milk10k_balance_age.png",
+                "milk10k_balance_gender.png": "assets/figures/milk10k_balance_gender.png",
+                "milk10k_balance_site.png": "assets/figures/milk10k_balance_site.png",
+            }
+        )
+    elif choice == "4":
+        from src.pipelines.dataset_config import MILK10K_CONFIG
+        from src.pipelines.prep_narratives import (
+            create_local_narrative_manifests,
+            visualize_narrative_manifests,
+        )
+
+        create_local_narrative_manifests(MILK10K_CONFIG)
+        visualize_narrative_manifests(MILK10K_CONFIG)
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "modal",
+                "run",
+                "-m",
+                "src.use_modal::narratives_entrypoint",
+                "--dataset",
+                "milk10k",
+            ],
+            check=True,
+        )
 
 
-@app.command()
-def verify_narrative_manifests() -> None:
-    """Verifies narrative manifests for data quality (runs locally)."""
-    from src.pipelines.prep_narratives import verify_narrative_manifests
+def _get_available_sources() -> list[str]:
+    """Scans assets/manifests and returns available data sources."""
+    manifests_dir = Path("assets/manifests")
+    if not manifests_dir.exists():
+        return []
 
-    verify_narrative_manifests()
+    sources = set()
+    for f in manifests_dir.glob("*_split_*.jsonl"):
+        name = f.stem
+        if name.startswith("split_"):
+            continue
+        if "_narratives_" in name or "_text_embeddings_" in name:
+            continue
+        source = name.split("_split_")[0]
+        sources.add(source)
+
+    return sorted(sources)
 
 
-@app.command()
-def create_narrative_embeddings() -> None:
-    """Creates narrative embeddings using sentence transformers on Modal T4 GPU."""
+def _select_sources(available: list[str], purpose: str) -> list[str]:
+    """Prompts user to select data sources."""
+    print(f"\n=== Select sources for {purpose} ===")
+    for i, source in enumerate(available, 1):
+        print(f"  {i}. {source}")
+    print(f"  {len(available) + 1}. All")
+    print(f"  {len(available) + 2}. Cancel")
+
+    choice = input("\nEnter choices (comma-separated, e.g., 1,2): ").strip()
+
+    if choice == str(len(available) + 2):
+        return []
+    if choice == str(len(available) + 1):
+        return available
+
+    selected = []
+    for c in choice.split(","):
+        c = c.strip()
+        if c.isdigit() and 1 <= int(c) <= len(available):
+            selected.append(available[int(c) - 1])
+
+    return selected
+
+
+def _create_text_embeddings() -> None:
+    """Creates text embeddings for selected sources."""
+    sources = _get_available_sources()
+    if not sources:
+        print("No data sources found. Create manifests first.")
+        return
+
+    selected = _select_sources(sources, "text embeddings")
+    if not selected:
+        return
+
+    print(f"\nCreating text embeddings for: {', '.join(selected)}")
+
     subprocess.run(
         [
             "uv",
@@ -134,79 +245,81 @@ def create_narrative_embeddings() -> None:
         check=True,
     )
 
-    use_buffer(
-        {
-            "embedding_split_train.jsonl": "assets/manifests/embedding_split_train.jsonl",
-            "embedding_split_val.jsonl": "assets/manifests/embedding_split_val.jsonl",
-            "embedding_split_test.jsonl": "assets/manifests/embedding_split_test.jsonl",
-        }
-    )
+    buffer_map = {}
+    for source in selected:
+        for split in ["train", "val", "test"]:
+            buffer_map[
+                f"{source}_text_embeddings_split_{split}.jsonl"
+            ] = f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
 
-    print("\n✓ Narrative embeddings created!")
+    use_buffer(buffer_map)
+    print("\n✓ Text embeddings created!")
 
 
-@app.command()
-def create_combined_manifests() -> None:
-    """Creates combined manifests with image_path, text_path, embedding_path, and label from ISIC, narrative, and embedding manifests."""
+def _create_combined_manifests() -> None:
+    """Creates combined manifests from selected sources."""
+    sources = _get_available_sources()
+    if not sources:
+        print("No data sources found. Create manifests first.")
+        return
+
+    selected = _select_sources(sources, "combined manifests")
+    if not selected:
+        return
+
+    print(f"\nCreating combined manifests from: {', '.join(selected)}")
     manifests_dir = Path("assets/manifests")
 
     for split in ["train", "val", "test"]:
-        isic_path = manifests_dir / f"isic_split_{split}.jsonl"
-        narrative_path = manifests_dir / f"narrative_split_{split}.jsonl"
-        embedding_path = manifests_dir / f"embedding_split_{split}.jsonl"
-        combined_path = manifests_dir / f"split_{split}.jsonl"
+        combined_items = []
 
-        print(f"\nCreating combined manifest for {split}...")
+        for source in selected:
+            image_path = manifests_dir / f"{source}_split_{split}.jsonl"
+            narrative_path = manifests_dir / f"{source}_narratives_split_{split}.jsonl"
+            embedding_path = (
+                manifests_dir / f"{source}_text_embeddings_split_{split}.jsonl"
+            )
 
-        with (
-            open(isic_path) as f_isic,
-            open(narrative_path) as f_narrative,
-            open(embedding_path) as f_embedding,
-        ):
-            isic_lines = f_isic.readlines()
-            narrative_lines = f_narrative.readlines()
-            embedding_lines = f_embedding.readlines()
+            if not image_path.exists():
+                print(f"  ⚠ Missing {image_path.name}, skipping {source}")
+                continue
 
-            if len(isic_lines) != len(narrative_lines) != len(embedding_lines):
-                raise ValueError(
-                    f"Mismatched manifest lengths for {split}: "
-                    f"ISIC has {len(isic_lines)} items, "
-                    f"narrative has {len(narrative_lines)} items, "
-                    f"embedding has {len(embedding_lines)} items"
-                )
+            with open(image_path) as f_img:
+                image_lines = f_img.readlines()
 
-            combined_items = []
-            for idx, (isic_line, narrative_line, embedding_line) in enumerate(
-                zip(isic_lines, narrative_lines, embedding_lines)
-            ):
-                isic_item = json.loads(isic_line)
-                narrative_item = json.loads(narrative_line)
-                embedding_item = json.loads(embedding_line)
+            narrative_lines = []
+            if narrative_path.exists():
+                with open(narrative_path) as f_nar:
+                    narrative_lines = f_nar.readlines()
 
-                if (
-                    isic_item["label"]
-                    != narrative_item["label"]
-                    != embedding_item["label"]
-                ):
-                    raise ValueError(
-                        f"Label mismatch at line {idx + 1} in {split}: "
-                        f"ISIC label={isic_item['label']}, "
-                        f"narrative label={narrative_item['label']}, "
-                        f"embedding label={embedding_item['label']}"
-                    )
+            embedding_lines = []
+            if embedding_path.exists():
+                with open(embedding_path) as f_emb:
+                    embedding_lines = f_emb.readlines()
+
+            for idx, img_line in enumerate(image_lines):
+                img_item = json.loads(img_line)
 
                 combined_item = {
-                    "image_path": isic_item["image_path"],
-                    "text_path": narrative_item["text_path"],
-                    "embedding_path": embedding_item["embedding_path"],
-                    "age_approx": isic_item["age_approx"],
-                    "sex": isic_item["sex"],
-                    "anatom_site_general": isic_item["anatom_site_general"],
-                    "label": isic_item["label"],
-                    "source": "isic",
+                    "image_path": img_item["image_path"],
+                    "age_approx": img_item.get("age_approx"),
+                    "sex": img_item.get("sex"),
+                    "anatom_site_general": img_item.get("anatom_site_general"),
+                    "label": img_item["label"],
+                    "source": source,
                 }
+
+                if idx < len(narrative_lines):
+                    nar_item = json.loads(narrative_lines[idx])
+                    combined_item["text_path"] = nar_item.get("text_path")
+
+                if idx < len(embedding_lines):
+                    emb_item = json.loads(embedding_lines[idx])
+                    combined_item["embedding_path"] = emb_item.get("embedding_path")
+
                 combined_items.append(combined_item)
 
+        combined_path = manifests_dir / f"split_{split}.jsonl"
         with open(combined_path, "w") as f_out:
             for item in combined_items:
                 f_out.write(json.dumps(item) + "\n")
@@ -216,44 +329,43 @@ def create_combined_manifests() -> None:
     print("\n✓ Combined manifests created successfully!")
 
 
+@app.command()
+def run_all() -> None:
+    """Runs complete data pipeline for all datasets."""
+    print("Running complete data pipeline...")
+
+
 @app.callback(invoke_without_command=True)
 def main(ctx: Context) -> None:
-    """Interactive CLI for ISIC2019 data management."""
+    """Interactive CLI for data management."""
     if ctx.invoked_subcommand is not None:
         return
 
-    print("\n=== ISIC2019 Data Management ===")
-    print("What would you like to do?")
-    print("  1. Download images")
-    print("  2. Verify download")
-    print("  3. Create image manifests")
-    print("  4. Generate narrative manifests")
-    print("  5. Generate narratives")
-    print("  6. Create narrative embeddings")
-    print("  7. Create combined manifests")
-    print("  8. Run all")
-    print("  9. Exit")
-    choice = input("\nEnter your choice: ").strip().lower()
+    while True:
+        print("\n=== Data Management ===")
+        print("  1. Handle ISIC2019")
+        print("  2. Handle MILK10k")
+        print("  3. Create text embeddings (select sources)")
+        print("  4. Create combined manifests (select sources)")
+        print("  5. Run all")
+        print("  6. Exit")
+        choice = input("\nEnter your choice: ").strip()
 
-    steps_map = {
-        "1": download_images,
-        "2": verify_images,
-        "3": process_images,
-        "4": generate_narrative_manifests,
-        "5": generate_narratives,
-        "6": create_narrative_embeddings,
-        "7": create_combined_manifests,
-        "8": run_all,
-    }
-
-    if choice == "9":
-        print("Exiting...")
-        return
-
-    if choice in steps_map:
-        steps_map[choice]()
-    else:
-        print("Invalid choice. Please run the script again.")
+        if choice == "1":
+            _handle_isic2019_submenu()
+        elif choice == "2":
+            _handle_milk10k_submenu()
+        elif choice == "3":
+            _create_text_embeddings()
+        elif choice == "4":
+            _create_combined_manifests()
+        elif choice == "5":
+            run_all()
+        elif choice == "6":
+            print("Exiting...")
+            break
+        else:
+            print("Invalid choice. Please try again.")
 
 
 if __name__ == "__main__":

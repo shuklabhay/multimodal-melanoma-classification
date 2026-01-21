@@ -215,5 +215,6 @@ __marimo__/
 /buffer
 .opencode*
 AGENTS.md
+CLAUDE.md
 *.wav
 *.mp3

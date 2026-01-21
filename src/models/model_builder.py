@@ -90,6 +90,16 @@ class DynamicModel(nnx.Module):
         embeddings: jnp.ndarray | None,
         train: bool = False,
     ) -> jnp.ndarray:
+        """Forward pass through the model based on configured encoders and fusion type.
+
+        Args:
+            images: Input images of shape (batch, height, width, channels), or None if text-only.
+            embeddings: Text embeddings of shape (batch, embed_dim), or None if image-only.
+            train: Whether in training mode (affects backbone behavior).
+
+        Returns:
+            Logits of shape (batch, num_classes).
+        """
         image_enc = self.config.get("image_enc")
         text_enc = self.config.get("text_enc")
 

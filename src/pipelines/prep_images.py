@@ -6,164 +6,216 @@ from typing import cast
 import jsonlines
 import matplotlib.pyplot as plt
 import polars as pl
+from imagededup.methods import PHash
 from tqdm import tqdm
 
-from src.pipelines.label_config import LABEL_CONFIG, SPLIT_COLORS
+from src.pipelines.dataset_config import SPLIT_COLORS, DatasetConfig
 
 
-def get_label_from_diagnosis(diagnosis_2: str, diagnosis_3: str) -> int:
-    """Maps diagnosis text to integer label using substring matching.
-
-    Args:
-        diagnosis_2: Text from diagnosis_2 column.
-        diagnosis_3: Text from diagnosis_3 column.
-
-    Returns:
-        Integer label 0-7, or -1 if no match found.
-    """
-    for diagnosis in [diagnosis_2, diagnosis_3]:
-        if not diagnosis:
-            continue
-
-        d = diagnosis.lower()
-        for label_id, config in LABEL_CONFIG.items():
-            for diagnosis_str in config["diagnoses"]:
-                if diagnosis_str.lower() in d:
-                    return label_id
-
-    return -1
-
-
-def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
-    """Removes images with '_unknown' or '_downsampled' in their filenames.
+def _can_map_label(row: dict, config: DatasetConfig) -> bool:
+    """Checks if a row's diagnosis can be mapped to a label in the config.
 
     Args:
-        df: DataFrame with image metadata including 'isic_id' column.
+        row: Dictionary containing diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
 
     Returns:
-        Filtered DataFrame with problematic filenames removed.
+        True if the diagnosis can be mapped to a label, False otherwise.
     """
-    return df.filter(
-        ~pl.col("isic_id").str.contains("_unknown")
-        & ~pl.col("isic_id").str.contains("_downsampled")
+    combined = " ".join(
+        [
+            str(row.get(col, "")).lower()
+            for col in config.diagnosis_columns
+            if row.get(col)
+        ]
     )
+    for label_cfg in config.label_config.values():
+        for pattern in label_cfg["diagnoses"]:
+            if pattern.lower() in combined:
+                return True
+    return False
 
 
-def filter_by_label(df: pl.DataFrame) -> pl.DataFrame:
-    """Drops entries with diagnoses that cannot be mapped to valid labels (0-7).
+def filter_by_label(df: pl.DataFrame, config: DatasetConfig) -> pl.DataFrame:
+    """Filters DataFrame to only include rows with mappable diagnosis labels.
 
     Args:
-        df: DataFrame with 'diagnosis_2' and 'diagnosis_3' columns.
+        df: Input DataFrame with diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
 
     Returns:
-        Filtered DataFrame with unmappable diagnoses removed.
+        Filtered DataFrame containing only rows with valid label mappings.
     """
-    df_with_labels = df.with_columns(
-        pl.struct(["diagnosis_2", "diagnosis_3"])
+    df_with_flag = df.with_columns(
+        pl.struct(config.diagnosis_columns)
         .map_elements(
-            lambda x: get_label_from_diagnosis(x["diagnosis_2"], x["diagnosis_3"]),
-            return_dtype=pl.Int64,
+            lambda x: _can_map_label(x, config),
+            return_dtype=pl.Boolean,
         )
-        .alias("_temp_label")
+        .alias("_can_map")
     )
-    return df_with_labels.filter(pl.col("_temp_label") != -1).drop("_temp_label")
+    return df_with_flag.filter(pl.col("_can_map")).drop("_can_map")
 
 
-def split_by_patient(
-    df: pl.DataFrame, train_ratio: float = 0.9
-) -> dict[str, pl.DataFrame]:
-    """Splits data by patient ID to ensure no patient appears in both train and val.
+def deduplicate_images(
+    df: pl.DataFrame,
+    config: DatasetConfig,
+    images_dir: Path,
+    max_distance_threshold: int = 2,
+) -> pl.DataFrame:
+    """Removes duplicate images using perceptual hashing.
 
     Args:
-        df: DataFrame with 'patient_id' column.
-        train_ratio: Ratio of patients to use for training (default 0.9).
+        df: Input DataFrame with image IDs.
+        config: Dataset configuration with image ID column name.
+        images_dir: Directory containing image files.
+        max_distance_threshold: Maximum hash distance to consider images as duplicates.
 
     Returns:
-        Dictionary with 'train' and 'val' DataFrames containing all images for assigned patients.
+        DataFrame with duplicate images removed.
     """
-    df_filled = df.with_columns(
-        pl.col("patient_id").fill_null(pl.format("unknown_{}", pl.col("isic_id")))
-    )
+    image_ids = df.select(config.image_id_column).to_series().to_list()
+    existing_images = set()
+    for image_id in image_ids:
+        img_path = images_dir / f"{image_id}.jpg"
+        if img_path.exists():
+            existing_images.add(image_id)
 
-    unique_patients = (
-        df_filled.select("patient_id").unique().sort("patient_id").to_series().to_list()
-    )
-    random.seed(42)
-    random.shuffle(unique_patients)
+    if not existing_images:
+        return df
 
-    split_idx = int(len(unique_patients) * train_ratio)
-    train_patients = set(unique_patients[:split_idx])
-    val_patients = set(unique_patients[split_idx:])
-
-    train_df = df_filled.filter(pl.col("patient_id").is_in(train_patients))
-    val_df = df_filled.filter(pl.col("patient_id").is_in(val_patients))
-
-    return {"train": train_df, "val": val_df}
-
-
-def download_isic2019() -> None:
-    """Downloads ISIC 2019 datasets from ISIC Archive using isic-cli."""
-    print("Downloading ISIC 2019 datasets from ISIC Archive using isic-cli...")
-    base_dir = Path("/data/raw")
-    base_dir.mkdir(parents=True, exist_ok=True)
-
-    collections = {
-        "training": {"id": 65, "dir": base_dir / "train" / "isic2019"},
-        "test": {"id": 72, "dir": base_dir / "test" / "isic2019"},
+    hasher = PHash()
+    encodings = hasher.encode_images(image_dir=str(images_dir), num_enc_workers=8)
+    filtered_encodings = {
+        k: v for k, v in encodings.items() if k.replace(".jpg", "") in existing_images
     }
 
-    for name, config in collections.items():
-        print(f"\n  Downloading {name} set (collection {config['id']})...")
-        config["dir"].mkdir(parents=True, exist_ok=True)
+    if not filtered_encodings:
+        return df
 
-        print(f"    Downloading metadata...")
-        metadata_output = config["dir"] / "metadata.csv"
-        subprocess.run(
-            [
-                "isic",
-                "metadata",
-                "download",
-                "--collections",
-                str(config["id"]),
-                "--outfile",
-                str(metadata_output),
-            ],
-            check=True,
-        )
+    duplicates = hasher.find_duplicates(
+        encoding_map=filtered_encodings,
+        max_distance_threshold=max_distance_threshold,
+    )
 
-        print(f"    Downloading images...")
-        images_dir = config["dir"] / "images"
-        subprocess.run(
-            [
-                "isic",
-                "image",
-                "download",
-                "--collections",
-                str(config["id"]),
-                str(images_dir),
-            ],
-            check=True,
-        )
+    to_remove = set()
+    for img, dups in duplicates.items():
+        for dup in dups:
+            if img < dup:
+                to_remove.add(dup.replace(".jpg", ""))
+            else:
+                to_remove.add(img.replace(".jpg", ""))
 
-        print(f"    Completed {name} set download")
+    if to_remove:
+        return df.filter(~pl.col(config.image_id_column).is_in(list(to_remove)))
 
-    print("\nDownload complete!")
+    return df
 
 
-def verify_download() -> None:
-    """Verifies downloaded data integrity by checking image and metadata counts."""
-    print("\nVerifying data...")
+def download_from_isic_archive(collection_id: int, output_dir: Path) -> None:
+    """Downloads metadata and images from ISIC archive for a collection.
+
+    Args:
+        collection_id: ISIC archive collection ID to download.
+        output_dir: Directory to save downloaded metadata and images.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"  Downloading metadata for collection {collection_id}...")
+    subprocess.run(
+        [
+            "isic",
+            "metadata",
+            "download",
+            "--collections",
+            str(collection_id),
+            "--outfile",
+            str(output_dir / "metadata.csv"),
+        ],
+        check=True,
+    )
+
+    print(f"  Downloading images for collection {collection_id}...")
+    subprocess.run(
+        [
+            "isic",
+            "image",
+            "download",
+            "--collections",
+            str(collection_id),
+            str(output_dir / "images"),
+        ],
+        check=True,
+    )
+
+
+def get_label_from_row(row: dict, config: DatasetConfig) -> int:
+    """Extracts integer label from a row based on diagnosis columns.
+
+    Args:
+        row: Dictionary containing diagnosis columns.
+        config: Dataset configuration with diagnosis columns and label mappings.
+
+    Returns:
+        Integer label corresponding to the diagnosis.
+    """
+    combined = " ".join(
+        [
+            str(row.get(col, "")).lower()
+            for col in config.diagnosis_columns
+            if row.get(col)
+        ]
+    )
+
+    for label_id, label_cfg in config.label_config.items():
+        for pattern in label_cfg["diagnoses"]:
+            if pattern.lower() in combined:
+                return label_id
+
+    diagnosis_values = {col: row.get(col) for col in config.diagnosis_columns}
+    raise ValueError(f"Could not map diagnosis to label: {diagnosis_values}")
+
+
+def download_dataset(config: DatasetConfig) -> None:
+    """Downloads train and test datasets from ISIC archive.
+
+    Args:
+        config: Dataset configuration with collection IDs and name.
+    """
+    print(f"Downloading {config.name} datasets...")
+    download_from_isic_archive(
+        config.train_collection_id, Path(f"/data/raw/train/{config.name}")
+    )
+    download_from_isic_archive(
+        config.test_collection_id, Path(f"/data/raw/test/{config.name}")
+    )
+    print(f"\n✓ {config.name} download complete!")
+
+
+def verify_download(config: DatasetConfig) -> None:
+    """Verifies downloaded data by checking image counts, metadata, and label mappings.
+
+    Args:
+        config: Dataset configuration with expected counts and label mappings.
+    """
+    print(f"\nVerifying {config.name} data...")
     base_dir = Path("/data/raw")
 
     collections = {
-        "training": {"dir": base_dir / "train" / "isic2019", "expected": 25331},
-        "test": {"dir": base_dir / "test" / "isic2019", "expected": 8238},
+        "training": {
+            "dir": base_dir / "train" / config.name,
+            "expected": config.expected_train_count,
+        },
+        "test": {
+            "dir": base_dir / "test" / config.name,
+            "expected": config.expected_test_count,
+        },
     }
 
-    for name, config in collections.items():
+    for name, coll_config in collections.items():
         print(f"\n  Verifying {name} set...")
-        images_dir = config["dir"] / "images"
-        metadata_path = config["dir"] / "metadata.csv"
+        images_dir = coll_config["dir"] / "images"
+        metadata_path = coll_config["dir"] / "metadata.csv"
 
         if images_dir.exists():
             image_files = list(images_dir.rglob("*.jpg"))
@@ -171,7 +223,7 @@ def verify_download() -> None:
             print(f"    Images found: {image_count}")
         else:
             image_count = 0
-            print(f"    ⚠ Images directory not found")
+            print("    ⚠ Images directory not found")
 
         if metadata_path.exists():
             with open(metadata_path) as f:
@@ -179,118 +231,229 @@ def verify_download() -> None:
             print(f"    Metadata rows: {metadata_rows}")
 
             df = pl.read_csv(metadata_path)
-            invalid_labels = df.filter(
-                pl.struct(["diagnosis_2", "diagnosis_3"]).map_elements(
-                    lambda x: get_label_from_diagnosis(
-                        x["diagnosis_2"], x["diagnosis_3"]
-                    ),
-                    return_dtype=pl.Int64,
-                )
-                == -1
-            )
-            invalid_count = len(invalid_labels)
+            unmapped = []
+            for row in df.iter_rows(named=True):
+                try:
+                    get_label_from_row(row, config)
+                except ValueError:
+                    diagnosis_values = {
+                        col: row.get(col) for col in config.diagnosis_columns
+                    }
+                    unmapped.append(diagnosis_values)
 
-            if invalid_count > 0:
-                print(
-                    f"    ⚠ WARNING: {invalid_count} entries with unmapped labels (-1)"
-                )
-                print(f"      All diagnoses failing mapping:")
-                for row in (
-                    invalid_labels.select(["diagnosis_2", "diagnosis_3"])
-                    .unique()
-                    .iter_rows(named=True)
-                ):
-                    print(
-                        f"        - diagnosis_2: {row['diagnosis_2']}, diagnosis_3: {row['diagnosis_3']}"
-                    )
+            if unmapped:
+                print(f"    ⚠ WARNING: {len(unmapped)} entries with unmapped labels")
+                unique_unmapped = []
+                seen = set()
+                for d in unmapped:
+                    key = tuple(sorted(d.items()))
+                    if key not in seen:
+                        seen.add(key)
+                        unique_unmapped.append(d)
+                for d in unique_unmapped[:10]:
+                    print(f"      - {d}")
+                if len(unique_unmapped) > 10:
+                    print(f"      ... and {len(unique_unmapped) - 10} more")
             else:
-                print(f"    ✓ All labels mapped successfully")
+                print("    ✓ All labels mapped successfully")
         else:
             metadata_rows = 0
-            print(f"    ⚠ Metadata CSV not found")
+            print("    ⚠ Metadata CSV not found")
 
-        expected = config["expected"]
+        expected = coll_config["expected"]
         if image_count == metadata_rows == expected:
             print(f"    ✓ All counts aligned at {expected}")
         else:
-            print(f"    ⚠ Count mismatch:")
+            print("    ⚠ Count mismatch:")
             print(f"      Expected: {expected}")
             print(f"      Images: {image_count}")
             print(f"      Metadata: {metadata_rows}")
 
 
-def create_train_val_splits(
-    data_dir: Path, train_ratio: float = 0.9
+def split_by_column(
+    df: pl.DataFrame,
+    config: DatasetConfig,
+    train_ratio: float = 0.9,
 ) -> dict[str, pl.DataFrame]:
-    """Main pipeline to process ISIC2019 training data with filtering and patient-level splitting.
+    """Splits DataFrame into train/val sets by unique values in split column.
 
     Args:
-        data_dir: Path to the ISIC2019 training data directory (e.g., /data/raw/train/isic2019).
-        train_ratio: Ratio of patients to use for training (default 0.9 for 90/10 split).
+        df: Input DataFrame to split.
+        config: Dataset configuration with split_by_column and image_id_column.
+        train_ratio: Fraction of unique IDs to use for training.
 
     Returns:
-        Dictionary with 'train' and 'val' keys containing all images for assigned patients.
+        Dictionary with 'train' and 'val' DataFrames.
+    """
+    df_filled = df.with_columns(
+        pl.col(config.split_by_column).fill_null(
+            pl.format(f"unknown_{{}}", pl.col(config.image_id_column))
+        )
+    )
+
+    unique_ids = (
+        df_filled.select(config.split_by_column)
+        .unique()
+        .sort(config.split_by_column)
+        .to_series()
+        .to_list()
+    )
+    random.seed(42)
+    random.shuffle(unique_ids)
+
+    split_idx = int(len(unique_ids) * train_ratio)
+    train_ids = set(unique_ids[:split_idx])
+    val_ids = set(unique_ids[split_idx:])
+
+    train_df = df_filled.filter(pl.col(config.split_by_column).is_in(train_ids))
+    val_df = df_filled.filter(pl.col(config.split_by_column).is_in(val_ids))
+
+    return {"train": train_df, "val": val_df}
+
+
+def create_train_val_splits(
+    config: DatasetConfig,
+    data_dir: Path,
+    train_ratio: float = 0.9,
+    max_distance_threshold: int = 2,
+) -> dict[str, pl.DataFrame]:
+    """Creates train/val splits from training data with filtering and deduplication.
+
+    Args:
+        config: Dataset configuration with filters and label mappings.
+        data_dir: Directory containing metadata.csv and images subdirectory.
+        train_ratio: Fraction of unique IDs to use for training.
+        max_distance_threshold: Maximum hash distance for image deduplication.
+
+    Returns:
+        Dictionary with 'train' and 'val' DataFrames.
     """
     metadata_path = data_dir / "metadata.csv"
+    images_dir = data_dir / "images"
 
     df = pl.read_csv(metadata_path)
     print(f"Initial dataset size: {len(df)}")
 
-    df = filter_by_filename(df)
-    print(f"After filename filtering: {len(df)}")
+    for filter_fn in config.extra_filters:
+        df = filter_fn(df)
+        print(f"After {filter_fn.__name__}: {len(df)}")
 
-    df = filter_by_label(df)
-    print(f"After label filtering: {len(df)}")
+    df = filter_by_label(df, config)
+    print(f"After filter_by_label: {len(df)}")
 
-    df = df.sort("isic_id")
-    splits = split_by_patient(df, train_ratio=train_ratio)
+    df = deduplicate_images(df, config, images_dir, max_distance_threshold)
+    print(f"After deduplicate_images: {len(df)}")
 
-    unique_patients = len(df.select("patient_id").unique())
-    print(f"Total unique patients: {unique_patients}")
+    df = df.sort(config.image_id_column)
+    splits = split_by_column(df, config, train_ratio=train_ratio)
+
+    unique_ids = len(df.select(config.split_by_column).unique())
+    print(f"Total unique {config.split_by_column}s: {unique_ids}")
     print(f"Train split: {len(splits['train'])} images")
     print(f"Val split: {len(splits['val'])} images")
 
     return splits
 
 
-def create_test_split(data_dir: Path) -> dict[str, pl.DataFrame]:
-    """Processes ISIC2019 test data.
+def create_test_split(
+    config: DatasetConfig,
+    data_dir: Path,
+    max_distance_threshold: int = 2,
+) -> dict[str, pl.DataFrame]:
+    """Creates test split from test data with filtering and deduplication.
 
     Args:
-        data_dir: Path to the ISIC2019 test data directory.
+        config: Dataset configuration with filters and label mappings.
+        data_dir: Directory containing metadata.csv and images subdirectory.
+        max_distance_threshold: Maximum hash distance for image deduplication.
 
     Returns:
-        Dictionary with 'test' key containing filtered DataFrame.
+        Dictionary with 'test' DataFrame.
     """
     metadata_path = data_dir / "metadata.csv"
+    images_dir = data_dir / "images"
 
     df = pl.read_csv(metadata_path)
     print(f"Initial test dataset size: {len(df)}")
 
-    df = filter_by_filename(df)
-    print(f"After filename filtering: {len(df)}")
+    for filter_fn in config.extra_filters:
+        df = filter_fn(df)
+        print(f"After {filter_fn.__name__}: {len(df)}")
 
-    df = filter_by_label(df)
-    print(f"After label filtering: {len(df)}")
+    df = filter_by_label(df, config)
+    print(f"After filter_by_label: {len(df)}")
+
+    df = deduplicate_images(df, config, images_dir, max_distance_threshold)
+    print(f"After deduplicate_images: {len(df)}")
+
     print(f"Final test split: {len(df)}")
 
     return {"test": df}
 
 
-def create_manifests(train_ratio: float = 0.9) -> None:
-    """Creates split manifests and generates balance summaries.
+def df_to_manifest(
+    df: pl.DataFrame, images_dir: Path, config: DatasetConfig
+) -> list[dict]:
+    """Converts DataFrame rows to manifest entry dictionaries.
 
     Args:
-        train_ratio: Ratio of data to use for training (default 0.9).
+        df: DataFrame with image metadata and labels.
+        images_dir: Directory containing image files.
+        config: Dataset configuration with column names.
+
+    Returns:
+        List of manifest entry dictionaries with image paths and metadata.
     """
-    print("Starting data processing pipeline...")
-    train_data_dir = Path("/data/raw/train/isic2019")
-    test_data_dir = Path("/data/raw/test/isic2019")
+    manifests = []
+
+    for row in tqdm(
+        df.iter_rows(named=True),
+        total=len(df),
+        desc=f"Generating {config.name} manifests",
+    ):
+        image_id = row.get(config.image_id_column, "")
+        manifest_entry = {
+            "image_path": str(images_dir / f"{image_id}.jpg"),
+            "label": row.get("label"),
+            config.id_column_for_manifest: row.get(config.id_column_for_manifest, ""),
+            "age_approx": row.get("age_approx"),
+            "sex": row.get("sex", "").lower() if row.get("sex") else None,
+            "anatom_site_general": row.get("anatom_site_general"),
+        }
+        manifests.append(manifest_entry)
+
+    return manifests
+
+
+def create_manifests(
+    config: DatasetConfig,
+    train_ratio: float = 0.9,
+    max_distance_threshold: int = 2,
+) -> None:
+    """Creates train/val/test manifest files from raw data with full processing pipeline.
+
+    Args:
+        config: Dataset configuration with collection IDs, filters, and label mappings.
+        train_ratio: Fraction of unique IDs to use for training.
+        max_distance_threshold: Maximum hash distance for image deduplication.
+    """
+    print(f"Starting {config.name} data processing pipeline...")
+    train_data_dir = Path(f"/data/raw/train/{config.name}")
+    test_data_dir = Path(f"/data/raw/test/{config.name}")
     images_dir_train = train_data_dir / "images"
     images_dir_test = test_data_dir / "images"
 
-    train_val_splits = create_train_val_splits(train_data_dir, train_ratio=train_ratio)
-    test_split = create_test_split(test_data_dir)
+    train_val_splits = create_train_val_splits(
+        config,
+        train_data_dir,
+        train_ratio=train_ratio,
+        max_distance_threshold=max_distance_threshold,
+    )
+    test_split = create_test_split(
+        config,
+        test_data_dir,
+        max_distance_threshold=max_distance_threshold,
+    )
     splits = {**train_val_splits, **test_split}
 
     print("\nConverting to manifests...")
@@ -300,9 +463,9 @@ def create_manifests(train_ratio: float = 0.9) -> None:
     splits_with_labels = {}
     for split, df in splits.items():
         df_with_labels = df.with_columns(
-            pl.struct(["diagnosis_2", "diagnosis_3"])
+            pl.struct(config.diagnosis_columns)
             .map_elements(
-                lambda x: get_label_from_diagnosis(x["diagnosis_2"], x["diagnosis_3"]),
+                lambda x: get_label_from_row(x, config),
                 return_dtype=pl.Int64,
             )
             .alias("label")
@@ -310,11 +473,11 @@ def create_manifests(train_ratio: float = 0.9) -> None:
         splits_with_labels[split] = df_with_labels
 
     for split, df in splits_with_labels.items():
-        manifest_path = buffer_dir / f"isic_split_{split}.jsonl"
+        manifest_path = buffer_dir / f"{config.name}_split_{split}.jsonl"
         print(f"Writing {split} manifest to {manifest_path}...")
 
         current_images_dir = images_dir_test if split == "test" else images_dir_train
-        manifest_list = df_to_manifest_dict(df, current_images_dir)
+        manifest_list = df_to_manifest(df, current_images_dir, config)
         random.seed(40)
         random.shuffle(manifest_list)
 
@@ -324,8 +487,49 @@ def create_manifests(train_ratio: float = 0.9) -> None:
         print(f"Saved {len(manifest_list)} entries to {manifest_path}")
 
     print("\nGenerating balance summaries...")
-    _generate_balance_summaries(splits_with_labels, buffer_dir)
-    print(f"\nAll outputs saved to {buffer_dir}")
+    _generate_balance_summaries(
+        splits_with_labels, buffer_dir, config.label_config, config.name
+    )
+    print(f"\n✓ {config.name} manifests saved to {buffer_dir}")
+
+
+def generate_visualizations(
+    config: DatasetConfig,
+    manifests_dir: Path,
+    output_dir: Path | None = None,
+) -> None:
+    """Generates balance visualization plots from existing manifests.
+
+    Args:
+        config: Dataset configuration with label mappings.
+        manifests_dir: Directory containing manifest JSONL files.
+        output_dir: Directory to save figures, defaults to manifests_dir.
+    """
+    if output_dir is None:
+        output_dir = manifests_dir
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    splits = {}
+    for split_name in ["train", "val", "test"]:
+        manifest_path = manifests_dir / f"{config.name}_split_{split_name}.jsonl"
+        if not manifest_path.exists():
+            continue
+
+        entries = []
+        with jsonlines.open(manifest_path) as reader:
+            entries = list(reader)
+
+        if entries:
+            splits[split_name] = pl.DataFrame(entries)
+
+    if not splits:
+        print(f"No manifests found for {config.name} in {manifests_dir}")
+        return
+
+    print(f"Generating visualizations for {config.name}...")
+    _generate_balance_summaries(splits, output_dir, config.label_config, config.name)
+    print(f"✓ Visualizations saved to {output_dir}")
 
 
 def verify_manifests() -> None:
@@ -356,13 +560,9 @@ def verify_manifests() -> None:
 
         print(f"    Total entries: {len(entries)}")
 
-        labels = [entry.get("label", -1) for entry in entries]
-        invalid_count = sum(1 for label in labels if label == -1)
-
-        if invalid_count > 0:
-            print(f"    ⚠ ERROR: {invalid_count} entries with invalid labels (-1)")
-        else:
-            print(f"    ✓ All labels valid (0-7)")
+        labels = [entry.get("label") for entry in entries]
+        valid_count = sum(1 for label in labels if label is not None)
+        print(f"    ✓ {valid_count} entries with valid labels")
 
         patient_ids = [
             entry.get("patient_id") for entry in entries if entry.get("patient_id")
@@ -378,7 +578,7 @@ def verify_manifests() -> None:
         all_manifests[split_name] = entries
 
     if "train" in all_manifests and "val" in all_manifests:
-        print(f"\n  Checking for patient overlap between splits...")
+        print("\n  Checking for patient overlap between splits...")
         train_patients = set(
             e.get("patient_id") for e in all_manifests["train"] if e.get("patient_id")
         )
@@ -392,60 +592,41 @@ def verify_manifests() -> None:
                 f"    ⚠ ERROR: {len(overlap)} patients appear in both train and val splits"
             )
         else:
-            print(f"    ✓ No patient overlap between splits")
-
-
-def df_to_manifest_dict(df: pl.DataFrame, images_dir: Path) -> list[dict]:
-    """Converts Polars DataFrame to list of manifest dictionaries.
-
-    Args:
-        df: DataFrame with ISIC2019 metadata (already filtered, with label column).
-        images_dir: Path to images directory for constructing full paths.
-
-    Returns:
-        List of dictionaries with manifest schema.
-    """
-    manifests = []
-
-    for row in tqdm(
-        df.iter_rows(named=True), total=len(df), desc="Generating manifests"
-    ):
-        manifest_entry = {
-            "image_path": str(images_dir / f"{row.get('isic_id', '')}.jpg"),
-            "label": row.get("label"),
-            "patient_id": row.get("patient_id", ""),
-            "age_approx": row.get("age_approx"),
-            "sex": row.get("sex", "").lower() if row.get("sex") else None,
-            "anatom_site_general": row.get("anatom_site_general"),
-        }
-
-        manifests.append(manifest_entry)
-
-    return manifests
+            print("    ✓ No patient overlap between splits")
 
 
 def _generate_balance_summaries(
-    splits: dict[str, pl.DataFrame], output_dir: Path
+    splits: dict[str, pl.DataFrame],
+    output_dir: Path,
+    label_config: dict,
+    prefix: str,
 ) -> None:
-    """Generates and saves balance summary visualizations.
+    """Generates and saves all balance summary plots for the dataset splits.
 
     Args:
-        splits: Dictionary with 'train' and 'val' DataFrames (already filtered, with labels).
-        output_dir: Directory to save summary images.
+        splits: Dictionary mapping split names to DataFrames.
+        output_dir: Directory to save generated figures.
+        label_config: Label configuration mapping IDs to names.
+        prefix: Dataset prefix for output filenames.
     """
-    label_names = {
-        label_id: config["name"] for label_id, config in LABEL_CONFIG.items()
-    }
-    _plot_label_distribution(splits, label_names, output_dir)
-    _plot_site_distribution(splits, label_names, output_dir)
-    _plot_gender_distribution(splits, label_names, output_dir)
-    _plot_age_distribution(splits, label_names, output_dir)
+    label_names = {label_id: cfg["name"] for label_id, cfg in label_config.items()}
+    plot_label_distribution(splits, label_names, output_dir, prefix)
+    plot_site_distribution(splits, label_names, output_dir, prefix)
+    plot_gender_distribution(splits, label_names, output_dir, prefix)
+    plot_age_distribution(splits, label_names, output_dir, prefix)
 
 
-def _plot_label_distribution(
-    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
+def plot_label_distribution(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test label distribution on one plot with different colors."""
+    """Plots train vs val vs test label distribution as grouped bar chart.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(14, 7))
 
     all_label_ids = sorted(label_names.keys())
@@ -488,14 +669,21 @@ def _plot_label_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "balance_label.png", dpi=150)
+    plt.savefig(output_dir / f"{prefix}_balance_label.png", dpi=150)
     plt.close()
 
 
-def _plot_site_distribution(
-    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
+def plot_site_distribution(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test site distribution side-by-side."""
+    """Plots anatomical site distribution by class as heatmaps for each split.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, axes = plt.subplots(1, 3, figsize=(30, 8))
 
     all_sites_set = set()
@@ -507,8 +695,7 @@ def _plot_site_distribution(
         [None] if None in all_sites_set else []
     )
 
-    split_order = ["train", "val", "test"]
-    for ax, split_name in zip(axes, split_order):
+    for ax, split_name in zip(axes, list(SPLIT_COLORS.keys())):
         if split_name not in splits:
             continue
         df = splits[split_name]
@@ -565,14 +752,21 @@ def _plot_site_distribution(
 
     fig.suptitle("Site Distribution by Class", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(output_dir / "balance_site.png", dpi=150)
+    plt.savefig(output_dir / f"{prefix}_balance_site.png", dpi=150)
     plt.close()
 
 
-def _plot_gender_distribution(
-    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
+def plot_gender_distribution(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test gender distribution on one chart with grouped bars."""
+    """Plots gender distribution by class as grouped bar chart for all splits.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
     all_label_ids = sorted(label_names.keys())
@@ -652,14 +846,21 @@ def _plot_gender_distribution(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "balance_gender.png", dpi=150)
+    plt.savefig(output_dir / f"{prefix}_balance_gender.png", dpi=150)
     plt.close()
 
 
-def _plot_age_distribution(
-    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path
+def plot_age_distribution(
+    splits: dict[str, pl.DataFrame], label_names: dict, output_dir: Path, prefix: str
 ) -> None:
-    """Plots train vs val vs test age distribution on one chart with violin plots."""
+    """Plots age distribution by class as violin plots for all splits.
+
+    Args:
+        splits: Dictionary mapping split names to DataFrames.
+        label_names: Mapping of label IDs to display names.
+        output_dir: Directory to save the generated figure.
+        prefix: Dataset prefix for output filename.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(16, 7))
 
     all_label_ids = sorted(label_names.keys())
@@ -682,7 +883,7 @@ def _plot_age_distribution(
             label_data = label_data.filter(label_data.is_not_null())
 
             if len(label_data) > 0:
-                position = j * (len(split_order) * width + 0.2) + i * width
+                position = j * (len(SPLIT_COLORS) * width + 0.2) + i * width
                 positions_list.append(position)
                 data_list.append(label_data.to_list())
                 colors_list.append(SPLIT_COLORS[split_name])
@@ -700,7 +901,7 @@ def _plot_age_distribution(
         pc.set_alpha(0.7)
 
     x_positions = [
-        j * (len(split_order) * width + 0.2) + width for j in range(len(all_label_ids))
+        j * (len(SPLIT_COLORS) * width + 0.2) + width for j in range(len(all_label_ids))
     ]
     ax.set_xticks(x_positions)
     ax.set_xticklabels(
@@ -718,12 +919,12 @@ def _plot_age_distribution(
         Patch(
             facecolor=SPLIT_COLORS[split_name], alpha=0.7, label=split_name.capitalize()
         )
-        for split_name in split_order
+        for split_name in SPLIT_COLORS
         if split_name in splits
     ]
     ax.legend(handles=legend_elements, loc="upper right")
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "balance_age.png", dpi=150)
+    plt.savefig(output_dir / f"{prefix}_balance_age.png", dpi=150)
     plt.close()
