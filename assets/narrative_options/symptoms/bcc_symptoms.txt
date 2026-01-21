@@ -1,18 +1,7 @@
 Itching
-Burning
-Stinging
 Tenderness
-Localized pain
-Bleeding after minor trauma
-Repeated crusting
-Repeated scab formation
-Oozing or moisture
-Dryness
-Roughness
-Numbness
-Altered sensation
-Discomfort during movement
-Soreness inside the nose
-Soreness inside the ear canal
-Deep aching
-Persistent localized discomfort
+Soreness
+Bleeding after a minor bump
+Recurrent crusting or scabbing
+Oozing or clear fluid
+Burning or stinging

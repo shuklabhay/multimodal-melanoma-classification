@@ -2,7 +2,7 @@ import modal
 from modal import App, Image, Volume
 
 from src.pipelines.prep_embeddings import create_narrative_embeddings
-from src.pipelines.dataset_config import ISIC2019_CONFIG, MILK10K_CONFIG
+from src.pipelines.dataset_config import ISIC2019_CONFIG
 from src.pipelines.prep_images import (
     create_manifests as _create_manifests,
     download_dataset as _download_dataset,
@@ -44,7 +44,6 @@ app = App(
 
 DATASET_CONFIGS = {
     "isic2019": ISIC2019_CONFIG,
-    "milk10k": MILK10K_CONFIG,
 }
 
 
@@ -53,7 +52,7 @@ def download_images(dataset: str) -> None:
     """Downloads images and metadata for specified dataset from ISIC archive.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _download_dataset(config)
@@ -64,7 +63,7 @@ def verify_download(dataset: str) -> None:
     """Verifies downloaded dataset by checking image counts and label mappings.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _verify_download(config)
@@ -75,7 +74,7 @@ def create_manifests(dataset: str) -> None:
     """Creates train/val/test manifest files for specified dataset.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _create_manifests(config, train_ratio=0.9)
@@ -86,7 +85,7 @@ def generate_narratives(dataset: str) -> None:
     """Generates narrative texts for specified dataset using LLM.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     generate_narrative_texts(dataset)
 
@@ -96,7 +95,7 @@ def narratives_entrypoint(dataset: str) -> None:
     """Local entrypoint to trigger narrative generation on Modal.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     print(f"Calling Modal to generate narrative texts for {dataset}...")
     generate_narratives.remote(dataset)

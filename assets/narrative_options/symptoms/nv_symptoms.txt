@@ -1,11 +1,5 @@
 Itching
-Burning
-Tingling
-Pain
 Tenderness
-Bleeding
-Crusting
-Oozing
-Ulceration
-Soreness
-Sensitivity
+Soreness when touched
+Bleeding if scratched
+Tingling

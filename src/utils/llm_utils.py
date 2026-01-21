@@ -154,6 +154,9 @@ def build_narrative_prompt(
     """
     meta_json = json.dumps({k: v for k, v in metadata.items() if v is not None})
     symptom_pools = ", ".join(params["symptoms"]) if params["symptoms"] else "none"
+    action_cues = params.get("action_cues") or "none"
+    context_slot = params.get("context_slot") or "none"
+    narrative_mode = params.get("narrative_mode") or "lesion"
 
     return prompt_template.format(
         meta_json=meta_json,
@@ -162,6 +165,9 @@ def build_narrative_prompt(
         symptom_pools=symptom_pools,
         temporal_quantifiers=params["temporal_quantifier"],
         structure=params["structure"],
+        action_cues=action_cues,
+        context_slot=context_slot,
+        narrative_mode=narrative_mode,
     )
 
 
@@ -340,6 +346,9 @@ async def process_narrative_batch(
             "temporal_quantifier": entry["temporal_quantifier"],
             "symptoms": entry["symptoms"],
             "structure": entry["structure"],
+            "action_cues": entry.get("action_cues"),
+            "context_slot": entry.get("context_slot"),
+            "narrative_mode": entry.get("narrative_mode", "lesion"),
         }
 
         tasks.append(
