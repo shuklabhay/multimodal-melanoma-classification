@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import cast
 
 import aiofiles
+import wandb
 from aiolimiter import AsyncLimiter
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from tqdm import tqdm
+
+from src.utils.eval_utils import NarrativeDiversityTracker
 
 
 def create_client(provider: str = "nous") -> tuple[AsyncOpenAI, AsyncLimiter]:
@@ -422,36 +425,99 @@ async def process_narrative_entries(
     prompt_template: str,
     split_name: str,
     batch_size: int = 4,
+    log_interval: int = 100,
 ) -> int:
     """Process all narrative entries, generating text and writing to files.
+
+    Tracks diversity metrics (Distinct-1, Distinct-2) incrementally and logs
+    to wandb. Computes Self-BLEU at the end of generation.
 
     Args:
         narrative_entries: List of manifest entries to process.
         prompt_template: Template string for prompt construction.
         split_name: Name of the data split (for progress bar display).
         batch_size: Number of entries to process per batch.
+        log_interval: Number of batches between wandb logs.
 
     Returns:
         Total number of entries processed.
     """
     client, limiter = create_client("nous")
+    tracker = NarrativeDiversityTracker()
 
-    for i in tqdm(
-        range(0, len(narrative_entries), batch_size),
-        desc=f"Generating {split_name} narrative batches",
+    wandb.init(
+        project=os.environ.get("WANDB_PROJECT", "narrative-generation"),
+        entity=os.environ.get("WANDB_ENTITY"),
+        name=f"narratives_{split_name}",
+        config={
+            "split": split_name,
+            "total_entries": len(narrative_entries),
+            "batch_size": batch_size,
+        },
+    )
+
+    total_batches = (len(narrative_entries) + batch_size - 1) // batch_size
+
+    for batch_idx, i in enumerate(
+        tqdm(
+            range(0, len(narrative_entries), batch_size),
+            desc=f"Generating {split_name} narrative batches",
+        )
     ):
         batch_entries = narrative_entries[i : i + batch_size]
         results = await process_narrative_batch(
             client, limiter, batch_entries, prompt_template
         )
 
-        sample_entry, sample_text = results[0]
-        print(f"\nSample: {sample_entry['text_path']}\n{sample_text}\n")
-
         for entry, narrative_text in results:
+            tracker.update(narrative_text)
             text_path = Path(entry["text_path"])
             async with aiofiles.open(text_path, mode="w") as f:
                 await f.write(narrative_text)
+
+        if batch_idx % log_interval == 0 or batch_idx == total_batches - 1:
+            metrics = tracker.get_metrics(compute_self_bleu=False)
+            wandb.log(
+                {
+                    "diversity/distinct_1": metrics["distinct_1"],
+                    "diversity/distinct_2": metrics["distinct_2"],
+                    "diversity/unique_unigrams": metrics["unique_unigrams"],
+                    "diversity/unique_bigrams": metrics["unique_bigrams"],
+                    "progress/num_narratives": metrics["num_narratives"],
+                    "progress/batch": batch_idx,
+                },
+                step=batch_idx,
+            )
+
+        if batch_idx == 0:
+            sample_entry, sample_text = results[0]
+            print(f"\nSample: {sample_entry['text_path']}\n{sample_text}\n")
+
+    print(f"\nComputing Self-BLEU for {split_name} split...")
+    final_metrics = tracker.get_metrics(compute_self_bleu=True)
+
+    wandb.log(
+        {
+            "final/distinct_1": final_metrics["distinct_1"],
+            "final/distinct_2": final_metrics["distinct_2"],
+            "final/self_bleu": final_metrics["self_bleu"],
+            "final/num_narratives": final_metrics["num_narratives"],
+            "final/unique_unigrams": final_metrics["unique_unigrams"],
+            "final/unique_bigrams": final_metrics["unique_bigrams"],
+        }
+    )
+
+    wandb.summary["distinct_1"] = final_metrics["distinct_1"]
+    wandb.summary["distinct_2"] = final_metrics["distinct_2"]
+    wandb.summary["self_bleu"] = final_metrics["self_bleu"]
+    wandb.summary["num_narratives"] = final_metrics["num_narratives"]
+
+    print(f"\n{split_name} Diversity Metrics:")
+    print(f"  Distinct-1: {final_metrics['distinct_1']:.4f}")
+    print(f"  Distinct-2: {final_metrics['distinct_2']:.4f}")
+    print(f"  Self-BLEU:  {final_metrics['self_bleu']:.4f} (lower is better)")
+
+    wandb.finish()
 
     return len(narrative_entries)
 

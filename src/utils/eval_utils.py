@@ -1,15 +1,198 @@
 import os
+import random
+from collections import Counter
 from typing import TypedDict, cast
 
 import jax
 import jax.numpy as jnp
 import wandb
 from flax import nnx, traverse_util
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from safetensors.flax import load_file, save_file
 
 from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG
 
 CHECKPOINT_BASE_DIR = "/data/checkpoints"
+
+
+def tokenize(text: str) -> list[str]:
+    """Simple whitespace tokenizer with lowercasing and punctuation handling.
+
+    Args:
+        text: Input text to tokenize.
+
+    Returns:
+        List of lowercase tokens.
+    """
+    return text.lower().split()
+
+
+def get_ngrams(tokens: list[str], n: int) -> list[tuple[str, ...]]:
+    """Extract n-grams from a list of tokens.
+
+    Args:
+        tokens: List of tokens.
+        n: N-gram size.
+
+    Returns:
+        List of n-gram tuples.
+    """
+    return [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
+
+
+def calculate_distinct_n(texts: list[str], n: int) -> float:
+    """Calculate Distinct-n metric for a corpus of texts.
+
+    Distinct-n measures lexical diversity as the ratio of unique n-grams
+    to total n-grams across all texts. Higher values indicate more diversity.
+
+    Args:
+        texts: List of text strings.
+        n: N-gram size (1 for unigrams, 2 for bigrams).
+
+    Returns:
+        Distinct-n score between 0 and 1.
+    """
+    all_ngrams: list[tuple[str, ...]] = []
+    for text in texts:
+        tokens = tokenize(text)
+        all_ngrams.extend(get_ngrams(tokens, n))
+
+    if not all_ngrams:
+        return 0.0
+
+    unique_ngrams = len(set(all_ngrams))
+    total_ngrams = len(all_ngrams)
+
+    return unique_ngrams / total_ngrams
+
+
+def calculate_self_bleu(texts: list[str], sample_size: int = 500) -> float:
+    """Calculate Self-BLEU metric for a corpus of texts.
+
+    Self-BLEU measures how similar generated texts are to each other.
+    Lower values indicate more diversity (less repetition across samples).
+
+    For efficiency, computes on a random sample if corpus is large.
+
+    Args:
+        texts: List of text strings.
+        sample_size: Maximum number of texts to sample for computation.
+
+    Returns:
+        Self-BLEU score between 0 and 1. Lower is more diverse.
+    """
+    if len(texts) < 2:
+        return 0.0
+
+    if len(texts) > sample_size:
+        texts = random.sample(texts, sample_size)
+
+    tokenized = [tokenize(text) for text in texts]
+    smoothing = SmoothingFunction().method1
+
+    bleu_scores = []
+    for i, hypothesis in enumerate(tokenized):
+        references = [tokenized[j] for j in range(len(tokenized)) if j != i]
+        if references and hypothesis:
+            score = sentence_bleu(references, hypothesis, smoothing_function=smoothing)
+            bleu_scores.append(score)
+
+    return sum(bleu_scores) / len(bleu_scores) if bleu_scores else 0.0
+
+
+class NarrativeDiversityTracker:
+    """Tracks narrative diversity metrics incrementally during generation.
+
+    Maintains running counts for efficient Distinct-n computation and
+    stores texts for Self-BLEU computation at the end.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the diversity tracker."""
+        self.unigram_counts: Counter[tuple[str, ...]] = Counter()
+        self.bigram_counts: Counter[tuple[str, ...]] = Counter()
+        self.total_unigrams = 0
+        self.total_bigrams = 0
+        self.texts: list[str] = []
+        self.num_narratives = 0
+
+    def update(self, text: str) -> None:
+        """Add a narrative text to the tracker.
+
+        Args:
+            text: Generated narrative text.
+        """
+        tokens = tokenize(text)
+        unigrams = get_ngrams(tokens, 1)
+        bigrams = get_ngrams(tokens, 2)
+
+        self.unigram_counts.update(unigrams)
+        self.bigram_counts.update(bigrams)
+        self.total_unigrams += len(unigrams)
+        self.total_bigrams += len(bigrams)
+        self.texts.append(text)
+        self.num_narratives += 1
+
+    def distinct_1(self) -> float:
+        """Get current Distinct-1 score.
+
+        Returns:
+            Distinct-1 score (unique unigrams / total unigrams).
+        """
+        if self.total_unigrams == 0:
+            return 0.0
+        return len(self.unigram_counts) / self.total_unigrams
+
+    def distinct_2(self) -> float:
+        """Get current Distinct-2 score.
+
+        Returns:
+            Distinct-2 score (unique bigrams / total bigrams).
+        """
+        if self.total_bigrams == 0:
+            return 0.0
+        return len(self.bigram_counts) / self.total_bigrams
+
+    def self_bleu(self, sample_size: int = 500) -> float:
+        """Compute Self-BLEU on collected texts.
+
+        Args:
+            sample_size: Maximum number of texts to sample.
+
+        Returns:
+            Self-BLEU score. Lower is more diverse.
+        """
+        return calculate_self_bleu(self.texts, sample_size)
+
+    def get_metrics(self, compute_self_bleu: bool = True) -> dict[str, float]:
+        """Get all diversity metrics.
+
+        Args:
+            compute_self_bleu: Whether to compute Self-BLEU (expensive).
+
+        Returns:
+            Dictionary with distinct_1, distinct_2, and optionally self_bleu.
+        """
+        metrics = {
+            "distinct_1": self.distinct_1(),
+            "distinct_2": self.distinct_2(),
+            "num_narratives": float(self.num_narratives),
+            "unique_unigrams": float(len(self.unigram_counts)),
+            "unique_bigrams": float(len(self.bigram_counts)),
+        }
+        if compute_self_bleu:
+            metrics["self_bleu"] = self.self_bleu()
+        return metrics
+
+    def reset(self) -> None:
+        """Reset all tracked state."""
+        self.unigram_counts.clear()
+        self.bigram_counts.clear()
+        self.total_unigrams = 0
+        self.total_bigrams = 0
+        self.texts.clear()
+        self.num_narratives = 0
 
 
 class ClassificationMetrics(TypedDict):
