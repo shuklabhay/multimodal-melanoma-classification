@@ -426,6 +426,7 @@ async def process_narrative_entries(
     split_name: str,
     batch_size: int = 4,
     log_interval: int = 100,
+    sample_interval: int = 100,
 ) -> int:
     """Process all narrative entries, generating text and writing to files.
 
@@ -488,7 +489,7 @@ async def process_narrative_entries(
                 step=step,
             )
 
-        if batch_idx == 0:
+        if sample_interval and batch_idx % sample_interval == 0 and results:
             sample_entry, sample_text = results[0]
             print(f"\nSample: {sample_entry['text_path']}\n{sample_text}\n")
 
