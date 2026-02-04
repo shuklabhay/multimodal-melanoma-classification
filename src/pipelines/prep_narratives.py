@@ -360,7 +360,7 @@ def generate_narrative_texts(prefix: str) -> None:
 
         total_entries = asyncio.run(
             process_narrative_entries(
-                narrative_entries, prompt_template, split, batch_size=4
+                narrative_entries, prompt_template, split, batch_size=16
             )
         )
         print(f"  Completed {split} split: {total_entries} narratives generated")

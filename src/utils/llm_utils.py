@@ -37,7 +37,7 @@ def create_client(provider: str = "nous") -> tuple[AsyncOpenAI, AsyncLimiter]:
                 "NOUS_API_KEY and NOUS_BASE_URL must be set in environment"
             )
         client = AsyncOpenAI(api_key=api_key, base_url=api_url)
-        limiter = AsyncLimiter(95, 200)
+        limiter = AsyncLimiter(400, 60)
     elif provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -477,16 +477,15 @@ async def process_narrative_entries(
 
         if batch_idx % log_interval == 0 or batch_idx == total_batches - 1:
             metrics = tracker.get_metrics(compute_self_bleu=False)
+            step = int(metrics["num_narratives"])
             wandb.log(
                 {
-                    "diversity/distinct_1": metrics["distinct_1"],
-                    "diversity/distinct_2": metrics["distinct_2"],
-                    "diversity/unique_unigrams": metrics["unique_unigrams"],
-                    "diversity/unique_bigrams": metrics["unique_bigrams"],
-                    "progress/num_narratives": metrics["num_narratives"],
-                    "progress/batch": batch_idx,
+                    "narratives/distinct_1": metrics["distinct_1"],
+                    "narratives/distinct_2": metrics["distinct_2"],
+                    "narratives/unique_unigrams": metrics["unique_unigrams"],
+                    "narratives/unique_bigrams": metrics["unique_bigrams"],
                 },
-                step=batch_idx,
+                step=step,
             )
 
         if batch_idx == 0:
@@ -498,19 +497,18 @@ async def process_narrative_entries(
 
     wandb.log(
         {
-            "final/distinct_1": final_metrics["distinct_1"],
-            "final/distinct_2": final_metrics["distinct_2"],
-            "final/self_bleu": final_metrics["self_bleu"],
-            "final/num_narratives": final_metrics["num_narratives"],
-            "final/unique_unigrams": final_metrics["unique_unigrams"],
-            "final/unique_bigrams": final_metrics["unique_bigrams"],
-        }
+            "narratives/distinct_1": final_metrics["distinct_1"],
+            "narratives/distinct_2": final_metrics["distinct_2"],
+            "narratives/self_bleu": final_metrics["self_bleu"],
+            "narratives/unique_unigrams": final_metrics["unique_unigrams"],
+            "narratives/unique_bigrams": final_metrics["unique_bigrams"],
+        },
+        step=int(final_metrics["num_narratives"]),
     )
 
-    wandb.summary["distinct_1"] = final_metrics["distinct_1"]
-    wandb.summary["distinct_2"] = final_metrics["distinct_2"]
-    wandb.summary["self_bleu"] = final_metrics["self_bleu"]
-    wandb.summary["num_narratives"] = final_metrics["num_narratives"]
+    wandb.summary["narratives/distinct_1"] = final_metrics["distinct_1"]
+    wandb.summary["narratives/distinct_2"] = final_metrics["distinct_2"]
+    wandb.summary["narratives/self_bleu"] = final_metrics["self_bleu"]
 
     print(f"\n{split_name} Diversity Metrics:")
     print(f"  Distinct-1: {final_metrics['distinct_1']:.4f}")

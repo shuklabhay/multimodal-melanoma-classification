@@ -117,6 +117,7 @@ def _handle_isic2019_submenu() -> None:
                 "run",
                 "modal",
                 "run",
+                "--detach",
                 "-m",
                 "src.use_modal::narratives_entrypoint",
                 "--dataset",
