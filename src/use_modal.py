@@ -81,24 +81,27 @@ def create_manifests(dataset: str) -> None:
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def generate_narratives(dataset: str) -> None:
+def generate_narratives(dataset: str, split: str | None = None) -> None:
     """Generates narrative texts for specified dataset using LLM.
 
     Args:
         dataset: Dataset name key ('isic2019').
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
-    generate_narrative_texts(dataset)
+    generate_narrative_texts(dataset, split=split)
 
 
 @app.local_entrypoint()
-def narratives_entrypoint(dataset: str) -> None:
+def narratives_entrypoint(dataset: str, split: str | None = None) -> None:
     """Local entrypoint to trigger narrative generation on Modal.
 
     Args:
         dataset: Dataset name key ('isic2019').
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
-    print(f"Calling Modal to generate narrative texts for {dataset}...")
-    generate_narratives.remote(dataset)
+    split_label = split or "all"
+    print(f"Calling Modal to generate narrative texts for {dataset} ({split_label})...")
+    generate_narratives.remote(dataset, split)
     print("✓ Narrative text generation complete on Modal")
 
 

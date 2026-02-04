@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -75,6 +76,59 @@ def _run_modal_create_manifests(dataset: str) -> None:
     )
 
 
+def _extract_modal_app_id(output: str) -> str | None:
+    match = re.search(r"(ap-[A-Za-z0-9]+)", output)
+    return match.group(1) if match else None
+
+
+def _run_modal_narratives_split(dataset: str, split: str) -> None:
+    """Run narrative generation for a single split on Modal and wait for completion."""
+    cmd = [
+        "uv",
+        "run",
+        "modal",
+        "run",
+        "--detach",
+        "-m",
+        "src.use_modal::narratives_entrypoint",
+        "--dataset",
+        dataset,
+        "--split",
+        split,
+    ]
+    try:
+        result = subprocess.run(
+            cmd, check=True, capture_output=True, text=True
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout:
+            print(exc.stdout, end="")
+        if exc.stderr:
+            print(exc.stderr, end="", file=sys.stderr)
+        raise
+
+    combined_output = ""
+    if result.stdout:
+        print(result.stdout, end="")
+        combined_output += result.stdout
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+        combined_output += result.stderr
+
+    app_id = _extract_modal_app_id(combined_output)
+    if not app_id:
+        print(
+            "⚠ Unable to determine Modal app id; not waiting for completion."
+        )
+        return
+
+    print(f"Waiting for Modal app {app_id} to finish...")
+    subprocess.run(
+        ["uv", "run", "modal", "app", "logs", app_id],
+        check=True,
+    )
+
+
 def _handle_isic2019_submenu() -> None:
     """Displays and handles ISIC2019 dataset operations submenu."""
     print("\n=== ISIC2019 Operations ===")
@@ -111,20 +165,8 @@ def _handle_isic2019_submenu() -> None:
 
         create_local_narrative_manifests(ISIC2019_CONFIG)
         visualize_narrative_manifests(ISIC2019_CONFIG)
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "modal",
-                "run",
-                "--detach",
-                "-m",
-                "src.use_modal::narratives_entrypoint",
-                "--dataset",
-                "isic2019",
-            ],
-            check=True,
-        )
+        for split in ["train", "val", "test"]:
+            _run_modal_narratives_split("isic2019", split)
 
 
 def _get_available_sources() -> list[str]:

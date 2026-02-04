@@ -327,11 +327,12 @@ def visualize_narrative_manifests(config: DatasetConfig) -> None:
         _generate_distribution_summaries(all_manifests, figures_dir, prefix)
 
 
-def generate_narrative_texts(prefix: str) -> None:
-    """Generates narrative texts for all splits using LLM and saves to text files.
+def generate_narrative_texts(prefix: str, split: str | None = None) -> None:
+    """Generates narrative texts for specified split(s) using LLM and saves to text files.
 
     Args:
         prefix: Dataset prefix (e.g., 'isic2019') used for manifest naming.
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
     options_dir = Path("/root/assets/narrative_options")
     prompt_template = (options_dir / "prompt.txt").read_text()
@@ -339,7 +340,7 @@ def generate_narrative_texts(prefix: str) -> None:
     base_dir = Path("/data/raw")
     manifests_dir = Path("/root/assets/manifests")
 
-    splits = ["train", "val", "test"]
+    splits = [split] if split else ["train", "val", "test"]
     for split in splits:
         print(f"Starting generation for {split} split...")
         narratives_dir = (
