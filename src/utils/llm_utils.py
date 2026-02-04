@@ -37,7 +37,7 @@ def create_client(provider: str = "nous") -> tuple[AsyncOpenAI, AsyncLimiter]:
                 "NOUS_API_KEY and NOUS_BASE_URL must be set in environment"
             )
         client = AsyncOpenAI(api_key=api_key, base_url=api_url)
-        limiter = AsyncLimiter(400, 60)
+        limiter = AsyncLimiter(200, 60)
     elif provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
