@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -81,6 +82,14 @@ def _extract_modal_app_id(output: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _uv_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
+    env.setdefault("UV_CACHE_DIR", "/tmp/uv-cache")
+    env.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+    return env
+
+
 def _run_modal_narratives_split(dataset: str, split: str) -> None:
     """Run narrative generation for a single split on Modal and wait for completion."""
     cmd = [
@@ -98,7 +107,7 @@ def _run_modal_narratives_split(dataset: str, split: str) -> None:
     ]
     try:
         result = subprocess.run(
-            cmd, check=True, capture_output=True, text=True
+            cmd, check=True, capture_output=True, text=True, env=_uv_env()
         )
     except subprocess.CalledProcessError as exc:
         if exc.stdout:
@@ -126,6 +135,7 @@ def _run_modal_narratives_split(dataset: str, split: str) -> None:
     subprocess.run(
         ["uv", "run", "modal", "app", "logs", app_id],
         check=True,
+        env=_uv_env(),
     )
 
 
