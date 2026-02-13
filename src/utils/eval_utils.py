@@ -476,8 +476,12 @@ def save_checkpoint(
     if os.path.exists(metadata_path):
         os.remove(metadata_path)
 
-    _, params, _ = nnx.split(model, nnx.Param, ...)
-    flat_params = traverse_util.flatten_dict(nnx.to_pure_dict(params), sep=".")
+    params_state, batch_stats_state = nnx.state(model, nnx.Param, nnx.BatchStat)
+    state_to_save = {
+        "params": nnx.to_pure_dict(params_state),
+        "batch_stats": nnx.to_pure_dict(batch_stats_state),
+    }
+    flat_params = traverse_util.flatten_dict(state_to_save, sep=".")
     flat_params = cast(dict[str, jax.Array], flat_params)
     save_file(flat_params, model_path)
 
@@ -546,10 +550,14 @@ def load_checkpoint(model: nnx.Module, run_name: str) -> None:
     print(f"Loading checkpoint from {model_path}")
     flat_params = load_file(model_path)
 
-    _, params, _ = nnx.split(model, nnx.Param, ...)
-    params_dict = nnx.to_pure_dict(params)
+    params_state, batch_stats_state = nnx.state(model, nnx.Param, nnx.BatchStat)
+
+    current_state = {
+        "params": nnx.to_pure_dict(params_state),
+        "batch_stats": nnx.to_pure_dict(batch_stats_state),
+    }
     flat_current = cast(
-        dict[str, jax.Array], traverse_util.flatten_dict(params_dict, sep=".")
+        dict[str, jax.Array], traverse_util.flatten_dict(current_state, sep=".")
     )
 
     for key in list(flat_current.keys()):
@@ -558,15 +566,21 @@ def load_checkpoint(model: nnx.Module, run_name: str) -> None:
 
     nested_updated = traverse_util.unflatten_dict(flat_current, sep=".")
 
-    def update_recursive(state: nnx.State, updates: dict) -> None:
+    def update_recursive(state: nnx.State, updates: dict, variable_type) -> None:
         for k, v in updates.items():
             if isinstance(v, dict):
-                update_recursive(getattr(state, k), v)
+                update_recursive(getattr(state, k), v, variable_type)
             else:
-                setattr(state, k, nnx.Param(v))
+                setattr(state, k, variable_type(v))
 
-    update_recursive(params, nested_updated)
-    nnx.update(model, params)
+    params_updates = nested_updated.get("params", {})
+    batch_stats_updates = nested_updated.get("batch_stats", {})
+
+    update_recursive(params_state, params_updates, nnx.Param)
+    update_recursive(batch_stats_state, batch_stats_updates, nnx.BatchStat)
+
+    nnx.update(model, params_state)
+    nnx.update(model, batch_stats_state)
 
 
 def load_checkpoint_metadata(run_name: str) -> dict | None:

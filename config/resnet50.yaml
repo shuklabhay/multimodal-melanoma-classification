@@ -1,0 +1,8 @@
+run_mode: image_only
+image_enc: resnet50
+text_enc: mpnet-base
+mlp_hidden_dim: 1024
+
+modality_dropout_normal: 0.6
+modality_dropout_zero_text: 0.2
+modality_dropout_swap_text: 0.2

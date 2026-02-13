@@ -197,6 +197,8 @@ def train_epoch(
     use_modality_dropout = (
         config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
     )
+    if config is not None and config.get("run_mode") != "multimodal":
+        use_modality_dropout = False
 
     if use_modality_dropout:
         seed_modality_dropout_rng(epoch)

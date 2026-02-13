@@ -208,7 +208,7 @@ def _process_item(
     embedding = embedding_data["embedding"]
 
     return (
-        image.numpy(),  # pyright: ignore[reportOptionalCall]
+        image.numpy(),
         embedding,
         item["label"],
     )

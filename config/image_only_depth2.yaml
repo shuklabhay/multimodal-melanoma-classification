@@ -1,4 +1,0 @@
-image_enc: resnet50
-text_enc: null
-fusion_type: none
-classifier: ClassifierDepth2

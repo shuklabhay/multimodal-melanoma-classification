@@ -1,0 +1,4 @@
+run_mode: text_only
+image_enc: null
+text_enc: mpnet-base
+mlp_hidden_dim: 1024
