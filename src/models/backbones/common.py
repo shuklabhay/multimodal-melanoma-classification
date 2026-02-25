@@ -10,7 +10,9 @@ from flax import nnx
 def recursive_to_nnx(data, variable_type):
     """Recursively converts nested dicts to nnx.Dict with variable wrappers."""
     if isinstance(data, dict):
-        return nnx.Dict({k: recursive_to_nnx(v, variable_type) for k, v in data.items()})
+        return nnx.Dict(
+            {k: recursive_to_nnx(v, variable_type) for k, v in data.items()}
+        )
     return variable_type(data)
 
 
@@ -101,7 +103,10 @@ class StateDictNCHWBackbone(nnx.Module):
             lhs=x,
             rhs=weight,
             window_strides=stride_pair,
-            padding=((padding_pair[0], padding_pair[0]), (padding_pair[1], padding_pair[1])),
+            padding=(
+                (padding_pair[0], padding_pair[0]),
+                (padding_pair[1], padding_pair[1]),
+            ),
             lhs_dilation=(1, 1),
             rhs_dilation=dilation_pair,
             dimension_numbers=("NCHW", "OIHW", "NCHW"),

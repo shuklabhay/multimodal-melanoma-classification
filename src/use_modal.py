@@ -180,7 +180,7 @@ def generate_similar_pairs() -> None:
 
 
 @app.function(
-    gpu="L4",
+    gpu="A100",
     cpu=2,
     memory=24576,
     timeout=86400,
@@ -195,7 +195,12 @@ def generate_similar_pairs() -> None:
         modal.Secret.from_dotenv(),
     ],
 )
-def train_model(run_name: str, config_name: str, resume_from: str | None = None):
+def train_model(
+    run_name: str,
+    config_name: str,
+    resume_from: str | None = None,
+    model_type: str | None = None,
+):
     """Train the lesion classification model on Modal with WandB tracking.
 
     Args:
@@ -203,12 +208,19 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
         config_name: Name of the config file (without .yaml extension).
         resume_from: Optional run name to resume training from. If provided,
             loads the checkpoint from that run and continues training.
+        model_type: Optional per-run override for model type: "image", "fusion", or "text".
     """
     from src.models.model_builder import load_config
     from src.utils.train_utils import train
 
     config_path = f"/root/config/{config_name}.yaml"
     config = load_config(config_path)
+    if model_type is not None:
+        if model_type not in {"image", "fusion", "text"}:
+            raise ValueError(
+                f"Invalid model_type={model_type}. Use one of: image, fusion, text"
+            )
+        config["type"] = model_type
 
     train(
         run_name=run_name,

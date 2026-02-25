@@ -15,11 +15,13 @@ TEXT_ENCODER_OUTPUT_DIMS = {
     "mpnet-base": 768,
 }
 
-RunMode = Literal["image_only", "multimodal", "text_only"]
+ModelType = Literal["image", "fusion", "text"]
+LegacyRunMode = Literal["image_only", "multimodal", "text_only"]
 
 
 class ModelConfig(TypedDict, total=False):
-    run_mode: RunMode
+    type: ModelType
+    run_mode: LegacyRunMode
     image_enc: ImageEncoderName | None
     text_enc: Literal["mpnet-base"] | None
     fusion_type: str
@@ -27,6 +29,34 @@ class ModelConfig(TypedDict, total=False):
     modality_dropout_normal: float
     modality_dropout_zero_text: float
     modality_dropout_swap_text: float
+
+
+RUN_MODE_TO_MODEL_TYPE: dict[LegacyRunMode, ModelType] = {
+    "image_only": "image",
+    "multimodal": "fusion",
+    "text_only": "text",
+}
+
+
+def get_model_type(config: ModelConfig) -> ModelType:
+    """Resolve training/inference model type from config.
+
+    Prefers `type` and supports legacy `run_mode` for backward compatibility.
+    """
+    model_type = config.get("type")
+    if model_type is not None:
+        if model_type not in {"image", "fusion", "text"}:
+            raise ValueError("Config `type` must be one of: image, fusion, text")
+        return cast(ModelType, model_type)
+
+    run_mode = config.get("run_mode")
+    if run_mode in RUN_MODE_TO_MODEL_TYPE:
+        return RUN_MODE_TO_MODEL_TYPE[cast(LegacyRunMode, run_mode)]
+
+    raise ValueError(
+        "Config must set `type` to one of: image, fusion, text "
+        "(or legacy `run_mode`: image_only, multimodal, text_only)"
+    )
 
 
 class DynamicModel(nnx.Module):
@@ -38,28 +68,24 @@ class DynamicModel(nnx.Module):
     ):
         self.config = config
 
-        run_mode = config.get("run_mode")
-        if run_mode not in {"image_only", "multimodal", "text_only"}:
-            raise ValueError(
-                "Config must set run_mode to one of: image_only, multimodal, text_only"
-            )
+        model_type = get_model_type(config)
 
         image_enc = config.get("image_enc")
         text_enc = config.get("text_enc")
 
-        if run_mode == "image_only":
+        if model_type == "image":
             if image_enc is None:
-                raise ValueError("image_only run_mode requires image_enc")
+                raise ValueError("type=image requires image_enc")
             text_enc = None
-        elif run_mode == "multimodal":
+        elif model_type == "fusion":
             if image_enc is None:
-                raise ValueError("multimodal run_mode requires image_enc")
+                raise ValueError("type=fusion requires image_enc")
             if text_enc is None:
-                raise ValueError("multimodal run_mode requires text_enc")
-        elif run_mode == "text_only":
+                raise ValueError("type=fusion requires text_enc")
+        elif model_type == "text":
             image_enc = None
             if text_enc is None:
-                raise ValueError("text_only run_mode requires text_enc")
+                raise ValueError("type=text requires text_enc")
 
         if image_enc is None and text_enc is None:
             raise ValueError("At least one encoder must be enabled")
@@ -67,7 +93,7 @@ class DynamicModel(nnx.Module):
         if text_enc is not None and text_enc not in TEXT_ENCODER_OUTPUT_DIMS:
             raise ValueError(f"Unsupported text encoder: {text_enc}")
 
-        self.run_mode = run_mode
+        self.model_type = model_type
         self.active_image_enc = image_enc
         self.active_text_enc = text_enc
 
@@ -123,7 +149,9 @@ class DynamicModel(nnx.Module):
         text_features = None
         if self.active_text_enc is not None:
             if embeddings is None:
-                raise ValueError("Model configured for text but no text embeddings provided")
+                raise ValueError(
+                    "Model configured for text but no text embeddings provided"
+                )
             text_features = embeddings
 
         return self.classify_from_features(image_features, text_features)

@@ -134,8 +134,6 @@ def _build_context_slot(metadata: dict) -> str:
     return ", ".join(parts) if parts else "none"
 
 
-
-
 def select_narrative_parameters(
     label: int,
     narrative_options: dict,
@@ -183,9 +181,10 @@ def select_narrative_parameters(
                 weights=list(SYMPTOM_POOL_WEIGHTS.values()),
                 k=num_symptoms,
             )
-            if "universal" not in pool_choices and narrative_options[
-                "symptoms_universal"
-            ]:
+            if (
+                "universal" not in pool_choices
+                and narrative_options["symptoms_universal"]
+            ):
                 pool_choices[0] = "universal"
 
             selected_symptoms = []

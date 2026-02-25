@@ -1,4 +1,4 @@
-run_mode: image_only
+type: image
 image_enc: resnet50
 text_enc: mpnet-base
 mlp_hidden_dim: 1024

@@ -37,7 +37,9 @@ class EfficientNetB4Backbone(StateDictNCHWBackbone):
             return (correct - 1, correct, correct - 1, correct)
         return (correct, correct, correct, correct)
 
-    def _build_block_specs(self, config: EfficientNetConfig) -> list[dict[str, int | bool]]:
+    def _build_block_specs(
+        self, config: EfficientNetConfig
+    ) -> list[dict[str, int | bool]]:
         specs: list[dict[str, int | bool]] = []
 
         num_base_blocks = len(config.in_channels)
@@ -123,7 +125,9 @@ class EfficientNetB4Backbone(StateDictNCHWBackbone):
                 x_nchw = jnn.silu(x_nchw)
 
             if stride == 2:
-                left, right, top, bottom = self._correct_pad(kernel_size, adjust_padding)
+                left, right, top, bottom = self._correct_pad(
+                    kernel_size, adjust_padding
+                )
                 x_nchw = self._pad_nchw(
                     x_nchw,
                     left=left,

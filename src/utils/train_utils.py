@@ -16,7 +16,12 @@ load_dotenv()
 
 _modality_dropout_rng: np.random.Generator | None = None
 
-from src.models.model_builder import DynamicModel, ModelConfig, build_model
+from src.models.model_builder import (
+    DynamicModel,
+    ModelConfig,
+    build_model,
+    get_model_type,
+)
 from src.utils.data_utils import create_tf_dataset_from_bundle, get_dataloaders
 from src.utils.eval_utils import (
     checkpoint_exists,
@@ -197,7 +202,7 @@ def train_epoch(
     use_modality_dropout = (
         config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
     )
-    if config is not None and config.get("run_mode") != "multimodal":
+    if config is not None and get_model_type(config) != "fusion":
         use_modality_dropout = False
 
     if use_modality_dropout:

@@ -1,17 +1,25 @@
-import ast
 import json
 import subprocess
 import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from typing import Literal, cast
 
 import numpy as np
+import yaml
 from typer import Context, Typer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 app = Typer()
+
+ModelType = Literal["image", "fusion", "text"]
+RUN_MODE_TO_MODEL_TYPE = {
+    "image_only": "image",
+    "multimodal": "fusion",
+    "text_only": "text",
+}
 
 
 def compute_class_weights(
@@ -76,14 +84,92 @@ def select_config() -> Path:
             print("Invalid input. Try again.")
 
 
+def load_raw_config(config_path: Path) -> dict:
+    """Load raw YAML config for CLI decisions."""
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        raise ValueError(f"Invalid config file: {config_path}")
+    return config
+
+
+def resolve_config_model_type(config: dict) -> ModelType:
+    """Resolve model type from config (`type` preferred, legacy `run_mode` supported)."""
+    model_type = config.get("type")
+    if model_type in {"image", "fusion", "text"}:
+        return cast(ModelType, model_type)
+
+    legacy_mode = config.get("run_mode")
+    mapped = RUN_MODE_TO_MODEL_TYPE.get(legacy_mode)
+    if mapped is not None:
+        return cast(ModelType, mapped)
+
+    raise ValueError(
+        "Config must contain `type` (image|fusion|text) or "
+        "legacy `run_mode` (image_only|multimodal|text_only)"
+    )
+
+
+def select_model_type(config_path: Path) -> ModelType:
+    """Prompt user to select model type for the selected config."""
+    config = load_raw_config(config_path)
+    default_type = resolve_config_model_type(config)
+
+    has_image = config.get("image_enc") is not None
+    has_text = config.get("text_enc") is not None
+
+    options: list[tuple[str, ModelType, str]] = []
+    if has_image and has_text:
+        options.append(("Image only", "image", "Use only image backbone features"))
+        options.append(("Fusion", "fusion", "Use image + text (concat features)"))
+    elif has_image:
+        options.append(("Image only", "image", "Use only image backbone features"))
+    elif has_text:
+        options.append(("Text only", "text", "Use only text embeddings"))
+
+    if not options:
+        raise ValueError(
+            "Selected config has neither image_enc nor text_enc. Cannot select model type."
+        )
+
+    supported_types = {opt[1] for opt in options}
+    if default_type not in supported_types:
+        default_type = options[0][1]
+
+    default_idx = next(
+        i
+        for i, (_, opt_type, _) in enumerate(options, start=1)
+        if opt_type == default_type
+    )
+
+    print("\n=== Training Type ===")
+    for i, (label, opt_type, description) in enumerate(options, start=1):
+        default_marker = " (default)" if opt_type == default_type else ""
+        print(f"  {i}. {label}{default_marker} - {description}")
+
+    while True:
+        choice = input(f"\nSelect type number [{default_idx}]: ").strip()
+        if choice == "":
+            return default_type
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                return options[idx][1]
+            print("Invalid selection. Try again.")
+        except ValueError:
+            print("Invalid input. Try again.")
+
+
 @app.command()
 def train() -> None:
-    """Launch training on Modal with selected config."""
+    """Launch training on Modal with selected config and model type."""
     config_path = select_config()
+    model_type = select_model_type(config_path)
     timestamp = datetime.now().strftime("%b%d%H%M").lower()
-    run_name = f"{config_path.stem}_{timestamp}"
+    run_name = f"{config_path.stem}_{model_type}_{timestamp}"
 
     print(f"\nStarting training with config: {config_path.stem}")
+    print(f"Model type: {model_type}")
     print(f"Run name: {run_name}")
     subprocess.run(
         [
@@ -96,6 +182,7 @@ def train() -> None:
             "src.use_modal::train_model",
             f"--run-name={run_name}",
             f"--config-name={config_path.stem}",
+            f"--model-type={model_type}",
         ],
         check=True,
     )
@@ -184,21 +271,28 @@ def resume() -> None:
     print(f"\nResuming: {resume_run_name}")
     print(f"Config: {config_name}")
 
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "modal",
-            "run",
-            "--detach",
-            "-m",
-            "src.use_modal::train_model",
-            f"--run-name={resume_run_name}",
-            f"--config-name={config_name}",
-            f"--resume-from={resume_run_name}",
-        ],
-        check=True,
-    )
+    resume_model_type = None
+    run_name_parts = resume_run_name.split("_")
+    if len(run_name_parts) >= 3 and run_name_parts[-2] in {"image", "fusion", "text"}:
+        resume_model_type = run_name_parts[-2]
+        print(f"Model type: {resume_model_type}")
+
+    cmd = [
+        "uv",
+        "run",
+        "modal",
+        "run",
+        "--detach",
+        "-m",
+        "src.use_modal::train_model",
+        f"--run-name={resume_run_name}",
+        f"--config-name={config_name}",
+        f"--resume-from={resume_run_name}",
+    ]
+    if resume_model_type is not None:
+        cmd.append(f"--model-type={resume_model_type}")
+
+    subprocess.run(cmd, check=True)
 
 
 def bundle() -> None:

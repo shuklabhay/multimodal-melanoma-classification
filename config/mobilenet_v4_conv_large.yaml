@@ -1,4 +1,4 @@
-run_mode: image_only
+type: image
 image_enc: mobilenet_v4_conv_large
 text_enc: mpnet-base
 mlp_hidden_dim: 1024

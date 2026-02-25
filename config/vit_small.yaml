@@ -1,4 +1,4 @@
-run_mode: image_only
+type: image
 image_enc: vit_small
 text_enc: mpnet-base
 mlp_hidden_dim: 1024

@@ -200,7 +200,9 @@ class MobileNetV3LargeBackbone(StateDictNCHWBackbone):
     def _hard_sigmoid(x: jnp.ndarray) -> jnp.ndarray:
         return jnp.clip(x + 3.0, 0.0, 6.0) / 6.0
 
-    def _activation(self, x: jnp.ndarray, activation: Literal["RE", "HS"]) -> jnp.ndarray:
+    def _activation(
+        self, x: jnp.ndarray, activation: Literal["RE", "HS"]
+    ) -> jnp.ndarray:
         if activation == "HS":
             return self._hard_swish(x)
         return jnn.relu(x)

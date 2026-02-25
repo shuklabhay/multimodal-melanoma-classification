@@ -126,9 +126,7 @@ def _run_modal_narratives_split(dataset: str, split: str) -> None:
 
     app_id = _extract_modal_app_id(combined_output)
     if not app_id:
-        print(
-            "⚠ Unable to determine Modal app id; not waiting for completion."
-        )
+        print("⚠ Unable to determine Modal app id; not waiting for completion.")
         return
 
     print(f"Waiting for Modal app {app_id} to finish...")
@@ -250,9 +248,9 @@ def _create_text_embeddings() -> None:
     buffer_map = {}
     for source in selected:
         for split in ["train", "val", "test"]:
-            buffer_map[
-                f"{source}_text_embeddings_split_{split}.jsonl"
-            ] = f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
+            buffer_map[f"{source}_text_embeddings_split_{split}.jsonl"] = (
+                f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
+            )
 
     use_buffer(buffer_map)
     print("\n✓ Text embeddings created!")
