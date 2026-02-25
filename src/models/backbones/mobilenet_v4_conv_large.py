@@ -150,6 +150,7 @@ class MobileNetV4ConvLargeBackbone(StateDictNCHWBackbone):
                     momentum=0.1,
                     train=train,
                 )
+                x_nchw = jnn.relu(x_nchw)
 
                 if has_dw_mid:
                     dw_mid_w = self._get_param(f"{prefix}.dw_mid.conv.weight")
@@ -169,6 +170,7 @@ class MobileNetV4ConvLargeBackbone(StateDictNCHWBackbone):
                         momentum=0.1,
                         train=train,
                     )
+                    x_nchw = jnn.relu(x_nchw)
 
                 x_nchw = self._conv2d_nchw(
                     x_nchw,
