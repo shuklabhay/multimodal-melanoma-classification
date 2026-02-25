@@ -190,6 +190,7 @@ def generate_similar_pairs() -> None:
             {
                 "TF_GPU_ALLOCATOR": "cuda_malloc_async",
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
             }
         ),
         modal.Secret.from_dotenv(),

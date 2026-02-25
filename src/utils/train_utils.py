@@ -197,7 +197,7 @@ def train_epoch(
     """
     all_logits = []
     all_labels = []
-    all_losses = []
+    all_losses: list[jax.Array] = []
 
     use_modality_dropout = (
         config is not None and config.get("modality_dropout_normal", 1.0) < 1.0
@@ -235,14 +235,16 @@ def train_epoch(
             class_weights,
         )
 
-        all_losses.append(float(loss))
+        all_losses.append(loss)
         all_logits.append(logits)
         all_labels.append(labels_jax)
-        pbar.set_postfix(loss=f"{loss:.4f}")
+        # Avoid syncing loss to host every step (reduces XLA/CUDA timer warnings).
+        pbar.set_postfix_str("training")
 
     all_logits = jnp.concatenate(all_logits)
     all_labels = jnp.concatenate(all_labels)
-    metrics = compute_metrics(all_logits, all_labels, all_losses)
+    losses_host = np.asarray(jax.device_get(jnp.stack(all_losses)), dtype=np.float32)
+    metrics = compute_metrics(all_logits, all_labels, losses_host.tolist())
 
     return metrics
 
@@ -264,7 +266,7 @@ def eval_epoch(
     """
     all_logits = []
     all_labels = []
-    all_losses = []
+    all_losses: list[jax.Array] = []
 
     batches = cast(Iterable[DatasetBatch], ds.as_numpy_iterator())
     for (images, embeddings), labels in batches:
@@ -275,11 +277,12 @@ def eval_epoch(
         loss, logits = eval_step(model, images_jax, embeddings_jax, labels_jax)
         all_logits.append(logits)
         all_labels.append(labels_jax)
-        all_losses.append(float(loss))
+        all_losses.append(loss)
 
     all_logits = jnp.concatenate(all_logits)
     all_labels = jnp.concatenate(all_labels)
-    metrics = compute_metrics(all_logits, all_labels, all_losses)
+    losses_host = np.asarray(jax.device_get(jnp.stack(all_losses)), dtype=np.float32)
+    metrics = compute_metrics(all_logits, all_labels, losses_host.tolist())
 
     if return_predictions:
         return metrics, all_logits, all_labels
