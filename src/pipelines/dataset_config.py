@@ -86,113 +86,6 @@ ISIC19_SIMILAR_PAIRS = [
     ("SCC", "BCC"),
 ]
 
-MILK10K_LABEL_CONFIG = {
-    0: {
-        "name": "Melanoma",
-        "short": "MEL",
-        "diagnoses": ["melanoma"],
-        "symptoms": "assets/narrative_options/symptoms/mel_symptoms.txt",
-    },
-    1: {
-        "name": "Melanocytic nevus",
-        "short": "NV",
-        "diagnoses": ["nevus"],
-        "symptoms": "assets/narrative_options/symptoms/nv_symptoms.txt",
-    },
-    2: {
-        "name": "Basal cell carcinoma",
-        "short": "BCC",
-        "diagnoses": ["basal cell"],
-        "symptoms": "assets/narrative_options/symptoms/bcc_symptoms.txt",
-    },
-    3: {
-        "name": "Actinic keratosis/intraepidermal carcinoma",
-        "short": "AKIEC",
-        "diagnoses": ["actinic keratosis", "in situ", "bowen"],
-        "symptoms": "assets/narrative_options/symptoms/ak_symptoms.txt",
-    },
-    4: {
-        "name": "Benign keratinocytic lesion",
-        "short": "BKL",
-        "diagnoses": ["acanthoma", "lentigo", "lichen planus", "seborrheic keratosis"],
-        "symptoms": "assets/narrative_options/symptoms/bkl_symptoms.txt",
-    },
-    5: {
-        "name": "Dermatofibroma",
-        "short": "DF",
-        "diagnoses": ["dermatofibroma"],
-        "symptoms": "assets/narrative_options/symptoms/df_symptoms.txt",
-    },
-    6: {
-        "name": "Vascular lesions and hemorrhage",
-        "short": "VASC",
-        "diagnoses": [
-            "vascular",
-            "angiokeratoma",
-            "arterio-venous",
-            "hemangioma",
-            "lymphangioma",
-            "pyogenic granuloma",
-        ],
-        "symptoms": "assets/narrative_options/symptoms/vasc_symptoms.txt",
-    },
-    7: {
-        "name": "Squamous cell carcinoma/keratoacanthoma",
-        "short": "SCCKA",
-        "diagnoses": ["sccka", "keratoacanthoma", "squamous cell carcinoma"],
-        "symptoms": "assets/narrative_options/symptoms/scc_symptoms.txt",
-    },
-    8: {
-        "name": "Inflammatory and infectious",
-        "short": "INF",
-        "diagnoses": [
-            "inflammatory",
-            "infectious",
-            "molluscum",
-            "porokeratosis",
-            "verruca",
-        ],
-        "symptoms": "assets/narrative_options/symptoms/inf_symptoms.txt",
-    },
-    9: {
-        "name": "Other benign proliferations",
-        "short": "BEN_OTH",
-        "diagnoses": [
-            "benign - other",
-            "fibro-histiocytic",
-            "soft tissue proliferations - vascular",
-            "collision - only benign",
-            "cylindroma",
-            "exogenous",
-            "fibroepithelial",
-            "fibroma",
-            "xanthogranuloma",
-            "mastocytosis",
-            "melanotic macule",
-            "scar",
-            "sebaceous hyperplasia",
-            "spiradenoma",
-            "supernumerary nipple",
-            "trichilemmal",
-            "trichoblastoma",
-        ],
-        "symptoms": "assets/narrative_options/symptoms/ben_oth_symptoms.txt",
-    },
-    10: {
-        "name": "Other malignant proliferations",
-        "short": "MAL_OTH",
-        "diagnoses": [
-            "fibroxanthoma",
-            "malignant proliferation",
-            "kaposi",
-            "lymphocytic proliferations",
-            "nerve sheath tumor",
-            "merkel",
-        ],
-        "symptoms": "assets/narrative_options/symptoms/mal_oth_symptoms.txt",
-    },
-}
-
 SPLIT_COLORS = {
     "train": "steelblue",
     "val": "coral",
@@ -215,18 +108,6 @@ def filter_by_filename(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def filter_clinical_only(df: pl.DataFrame) -> pl.DataFrame:
-    """Filters DataFrame to include only clinical image types.
-
-    Args:
-        df: Input DataFrame with image_type column.
-
-    Returns:
-        Filtered DataFrame containing only clinical images.
-    """
-    return df.filter(pl.col("image_type").str.to_lowercase().str.contains("clinical"))
-
-
 ISIC2019_CONFIG = DatasetConfig(
     name="isic2019",
     train_collection_id=65,
@@ -239,18 +120,4 @@ ISIC2019_CONFIG = DatasetConfig(
     expected_train_count=25331,
     expected_test_count=8238,
     extra_filters=[filter_by_filename],
-)
-
-MILK10K_CONFIG = DatasetConfig(
-    name="milk10k",
-    train_collection_id=425,
-    test_collection_id=424,
-    label_config=MILK10K_LABEL_CONFIG,
-    diagnosis_columns=["diagnosis_1", "diagnosis_2", "diagnosis_3"],
-    split_by_column="lesion_id",
-    id_column_for_manifest="lesion_id",
-    image_id_column="isic_id",
-    expected_train_count=10480,
-    expected_test_count=958,
-    extra_filters=[filter_clinical_only],
 )

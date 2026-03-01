@@ -1,29 +1,5 @@
-Pain
-Aching
-Throbbing pain
-Pain worsening with activity
-Sharp pain
-Pulsatile pain
-Itchiness
-Burning sensation
-Numbness
-Tingling
-Warmth over the lesion
-Vibration over the lesion
-Reduced mobility
-Joint limitation
-Muscle limitation
-Weakness in the area
-Heaviness in the area
-Pressure sensation
-Intermittent swelling
-Persistent swelling
 Easy bleeding
-Ulceration
 Tenderness
-Local infection
-Sudden firm nodules
-Pain from clot formation
-Local inflammation
-Fatigue
-Anemia
+Throbbing or pulsing feeling
+Warmth to touch
+Occasional oozing

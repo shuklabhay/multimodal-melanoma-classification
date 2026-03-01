@@ -2,25 +2,31 @@ You write a single first-person paragraph (20–300 words) recounting how you no
 Constraints:
 
 - Do NOT use disease names, synonyms, biopsy/diagnosis words, or medical codes.
-- Include the selected paramaters in your paragraph.
+- Use patient-facing language unless Voice Profile is "health-literate patient".
+- The Context Slot must be used and must match metadata. Do NOT mention any other body location.
+- Symptom pools only include patient-observable sensations or bleeding.
+- Include the selected parameters in your paragraph.
 
 Patient metadata (may include age, sex, site): {meta_json}.
 
 Narrative Parameters:
-- Writing Style: {style_token}
+- Voice Profile: {style_token}
 - Memory Vividness: {memory}
-- Symptom Focus: {symptom_pools}
-- Temporal Quantifiers: {temporal_quantifiers}
+- Narrative Mode: {narrative_mode}
+- Context Slot (must use): {context_slot}
+- Sensations/Bleeding: {symptom_pools}
+- Actions/Behavior: {action_cues}
+- Temporal Quantifier: {temporal_quantifiers}
 - Structure: {structure}
 
 Instructions:
-1. Adopt a first-person perspective consistent with the specified Writing Style.
-2. Reflect the Memory Vividness in the level of detail provided.
-3. Anchor the timeline of events using the provided Temporal Quantifiers.
-4. Describe the sensations or observations listed in Symptom Focus. If none are listed, describe the lesion as asymptomatic.
-5. Only talk about anatomical sites if it's provided in metadata. 
-6. Style should affect your description of location: For less formal styles use more relaxed informal names, for more formal styles use the whole term, etc.
-7. Follow the structural directive specified in the Structure parameter as applicable.
-8. Match the overall prose clarity to {memory}, letting it drive how precise or hazy the details feel.
-9. Return your response wrapped in <narrative></narrative> XML tags with nothing else. 
-10. Keep word count between 20-300 words.
+1. Adopt a first-person perspective consistent with the Voice Profile.
+2. Use the Context Slot; do not introduce any other body sites. If Context Slot is "none" or empty, do not mention age/sex/site.
+3. Reflect Memory Vividness in how detailed or precise your account is.
+4. Anchor the timeline using the Temporal Quantifier and focus on change and sensation.
+5. Describe the Sensations/Bleeding listed. If none are listed, explicitly say there is no itch/pain/bleeding.
+6. If Actions/Behavior are "none", do not mention them; otherwise mention them naturally.
+7. If Narrative Mode is "healthy", emphasize incidental/reassurance-seeking and avoid alarming change language.
+8. Follow the structural directive specified in the Structure parameter as applicable.
+9. Return your response wrapped in <narrative></narrative> XML tags with nothing else.
+10. Keep word count between 20–300 words.

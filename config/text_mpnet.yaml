@@ -1,0 +1,4 @@
+type: text
+image_enc: null
+text_enc: mpnet-base
+mlp_hidden_dim: 1024

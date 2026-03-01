@@ -1,14 +1,5 @@
-Itching
-Pain
-Tenderness
-Local pressure or discomfort
-Numbness
-Tingling or altered sensation
 Bleeding when rubbed
-Persistent crusting
-Difficulty moving nearby structures
-Difficulty swallowing
-Hoarseness or voice changes
-Chronic cough
-Regional lymph node tenderness
-General malaise
+Persistent crusting or scabbing
+Tenderness
+Pain
+Soreness

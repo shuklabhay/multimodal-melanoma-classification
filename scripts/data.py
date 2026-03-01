@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +18,7 @@ def _run_modal_download_images(dataset: str) -> None:
     """Runs Modal download_images function for specified dataset.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key (e.g., 'isic2019').
     """
     subprocess.run(
         [
@@ -37,7 +39,7 @@ def _run_modal_verify_download(dataset: str) -> None:
     """Runs Modal verify_download function for specified dataset.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key (e.g., 'isic2019').
     """
     subprocess.run(
         [
@@ -58,7 +60,7 @@ def _run_modal_create_manifests(dataset: str) -> None:
     """Runs Modal create_manifests function for specified dataset.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key (e.g., 'isic2019').
     """
     subprocess.run(
         [
@@ -72,6 +74,66 @@ def _run_modal_create_manifests(dataset: str) -> None:
             dataset,
         ],
         check=True,
+    )
+
+
+def _extract_modal_app_id(output: str) -> str | None:
+    match = re.search(r"(ap-[A-Za-z0-9]+)", output)
+    return match.group(1) if match else None
+
+
+def _uv_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("XDG_CACHE_HOME", "/tmp")
+    env.setdefault("UV_CACHE_DIR", "/tmp/uv-cache")
+    env.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+    return env
+
+
+def _run_modal_narratives_split(dataset: str, split: str) -> None:
+    """Run narrative generation for a single split on Modal and wait for completion."""
+    cmd = [
+        "uv",
+        "run",
+        "modal",
+        "run",
+        "--detach",
+        "-m",
+        "src.use_modal::narratives_entrypoint",
+        "--dataset",
+        dataset,
+        "--split",
+        split,
+    ]
+    try:
+        result = subprocess.run(
+            cmd, check=True, capture_output=True, text=True, env=_uv_env()
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.stdout:
+            print(exc.stdout, end="")
+        if exc.stderr:
+            print(exc.stderr, end="", file=sys.stderr)
+        raise
+
+    combined_output = ""
+    if result.stdout:
+        print(result.stdout, end="")
+        combined_output += result.stdout
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+        combined_output += result.stderr
+
+    app_id = _extract_modal_app_id(combined_output)
+    if not app_id:
+        print("⚠ Unable to determine Modal app id; not waiting for completion.")
+        return
+
+    print(f"Waiting for Modal app {app_id} to finish...")
+    subprocess.run(
+        ["uv", "run", "modal", "app", "logs", app_id],
+        check=True,
+        env=_uv_env(),
     )
 
 
@@ -111,70 +173,8 @@ def _handle_isic2019_submenu() -> None:
 
         create_local_narrative_manifests(ISIC2019_CONFIG)
         visualize_narrative_manifests(ISIC2019_CONFIG)
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "modal",
-                "run",
-                "-m",
-                "src.use_modal::narratives_entrypoint",
-                "--dataset",
-                "isic2019",
-            ],
-            check=True,
-        )
-
-
-def _handle_milk10k_submenu() -> None:
-    """Displays and handles MILK10k dataset operations submenu."""
-    print("\n=== MILK10k Operations ===")
-    print("  1. Download images")
-    print("  2. Verify download")
-    print("  3. Create manifests")
-    print("  4. Generate narratives")
-    print("  5. Back")
-    choice = input("\nEnter your choice: ").strip()
-
-    if choice == "1":
-        _run_modal_download_images("milk10k")
-    elif choice == "2":
-        _run_modal_verify_download("milk10k")
-    elif choice == "3":
-        _run_modal_create_manifests("milk10k")
-        use_buffer(
-            {
-                "milk10k_split_train.jsonl": "assets/manifests/milk10k_split_train.jsonl",
-                "milk10k_split_val.jsonl": "assets/manifests/milk10k_split_val.jsonl",
-                "milk10k_split_test.jsonl": "assets/manifests/milk10k_split_test.jsonl",
-                "milk10k_balance_label.png": "assets/figures/milk10k_balance_label.png",
-                "milk10k_balance_age.png": "assets/figures/milk10k_balance_age.png",
-                "milk10k_balance_gender.png": "assets/figures/milk10k_balance_gender.png",
-                "milk10k_balance_site.png": "assets/figures/milk10k_balance_site.png",
-            }
-        )
-    elif choice == "4":
-        from src.pipelines.dataset_config import MILK10K_CONFIG
-        from src.pipelines.prep_narratives import (
-            create_local_narrative_manifests,
-            visualize_narrative_manifests,
-        )
-
-        create_local_narrative_manifests(MILK10K_CONFIG)
-        visualize_narrative_manifests(MILK10K_CONFIG)
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "modal",
-                "run",
-                "-m",
-                "src.use_modal::narratives_entrypoint",
-                "--dataset",
-                "milk10k",
-            ],
-            check=True,
-        )
+        for split in ["train", "val", "test"]:
+            _run_modal_narratives_split("isic2019", split)
 
 
 def _get_available_sources() -> list[str]:
@@ -248,9 +248,9 @@ def _create_text_embeddings() -> None:
     buffer_map = {}
     for source in selected:
         for split in ["train", "val", "test"]:
-            buffer_map[
-                f"{source}_text_embeddings_split_{split}.jsonl"
-            ] = f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
+            buffer_map[f"{source}_text_embeddings_split_{split}.jsonl"] = (
+                f"assets/manifests/{source}_text_embeddings_split_{split}.jsonl"
+            )
 
     use_buffer(buffer_map)
     print("\n✓ Text embeddings created!")
@@ -344,24 +344,21 @@ def main(ctx: Context) -> None:
     while True:
         print("\n=== Data Management ===")
         print("  1. Handle ISIC2019")
-        print("  2. Handle MILK10k")
-        print("  3. Create text embeddings (select sources)")
-        print("  4. Create combined manifests (select sources)")
-        print("  5. Run all")
-        print("  6. Exit")
+        print("  2. Create text embeddings (select sources)")
+        print("  3. Create combined manifests (select sources)")
+        print("  4. Run all")
+        print("  5. Exit")
         choice = input("\nEnter your choice: ").strip()
 
         if choice == "1":
             _handle_isic2019_submenu()
         elif choice == "2":
-            _handle_milk10k_submenu()
-        elif choice == "3":
             _create_text_embeddings()
-        elif choice == "4":
+        elif choice == "3":
             _create_combined_manifests()
-        elif choice == "5":
+        elif choice == "4":
             run_all()
-        elif choice == "6":
+        elif choice == "5":
             print("Exiting...")
             break
         else:

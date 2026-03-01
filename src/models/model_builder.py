@@ -1,29 +1,62 @@
-from typing import TypedDict
+from typing import Literal, TypedDict, cast
 
 import jax.numpy as jnp
 import yaml
 from flax import nnx
 
-from src.models.backbones import ResNet50Backbone
-from src.models.classifiers import (
-    ClassifierDepth2,
-    FiLMClassifierDepth2,
+from src.models.backbones import (
+    ImageEncoderName,
+    build_image_backbone,
+    get_image_encoder_output_dim,
 )
+from src.models.classifiers import ConcatMLPClassifier
 
-ENCODER_OUTPUT_DIMS = {
-    "resnet50": 2048,
+TEXT_ENCODER_OUTPUT_DIMS = {
     "mpnet-base": 768,
 }
 
+ModelType = Literal["image", "fusion", "text"]
+LegacyRunMode = Literal["image_only", "multimodal", "text_only"]
+
 
 class ModelConfig(TypedDict, total=False):
-    image_enc: str | None
-    text_enc: str | None
+    type: ModelType
+    run_mode: LegacyRunMode
+    image_enc: ImageEncoderName | None
+    text_enc: Literal["mpnet-base"] | None
     fusion_type: str
-    classifier: str
+    mlp_hidden_dim: int
     modality_dropout_normal: float
     modality_dropout_zero_text: float
     modality_dropout_swap_text: float
+
+
+RUN_MODE_TO_MODEL_TYPE: dict[LegacyRunMode, ModelType] = {
+    "image_only": "image",
+    "multimodal": "fusion",
+    "text_only": "text",
+}
+
+
+def get_model_type(config: ModelConfig) -> ModelType:
+    """Resolve training/inference model type from config.
+
+    Prefers `type` and supports legacy `run_mode` for backward compatibility.
+    """
+    model_type = config.get("type")
+    if model_type is not None:
+        if model_type not in {"image", "fusion", "text"}:
+            raise ValueError("Config `type` must be one of: image, fusion, text")
+        return cast(ModelType, model_type)
+
+    run_mode = config.get("run_mode")
+    if run_mode in RUN_MODE_TO_MODEL_TYPE:
+        return RUN_MODE_TO_MODEL_TYPE[cast(LegacyRunMode, run_mode)]
+
+    raise ValueError(
+        "Config must set `type` to one of: image, fusion, text "
+        "(or legacy `run_mode`: image_only, multimodal, text_only)"
+    )
 
 
 class DynamicModel(nnx.Module):
@@ -35,54 +68,59 @@ class DynamicModel(nnx.Module):
     ):
         self.config = config
 
+        model_type = get_model_type(config)
+
         image_enc = config.get("image_enc")
         text_enc = config.get("text_enc")
-        fusion_type = config.get("fusion_type", "none")
-        classifier_name = config.get("classifier")
 
-        if image_enc == "resnet50" and text_enc is None:
-            self.image_encoder = ResNet50Backbone()
-            if classifier_name == "ClassifierDepth2":
-                self.classifier = ClassifierDepth2(
-                    input_dim=ENCODER_OUTPUT_DIMS["resnet50"],
-                    num_classes=num_classes,
-                    rngs=rngs,
-                )
-            else:
-                raise ValueError(f"Unsupported classifier: {classifier_name}")
+        if model_type == "image":
+            if image_enc is None:
+                raise ValueError("type=image requires image_enc")
+            text_enc = None
+        elif model_type == "fusion":
+            if image_enc is None:
+                raise ValueError("type=fusion requires image_enc")
+            if text_enc is None:
+                raise ValueError("type=fusion requires text_enc")
+        elif model_type == "text":
+            image_enc = None
+            if text_enc is None:
+                raise ValueError("type=text requires text_enc")
 
-        elif text_enc == "mpnet-base" and image_enc is None:
-            if classifier_name == "ClassifierDepth2":
-                self.classifier = ClassifierDepth2(
-                    input_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
-                    num_classes=num_classes,
-                    rngs=rngs,
-                )
-            else:
-                raise ValueError(f"Unsupported classifier: {classifier_name}")
+        if image_enc is None and text_enc is None:
+            raise ValueError("At least one encoder must be enabled")
 
-        elif (
-            image_enc == "resnet50"
-            and text_enc == "mpnet-base"
-            and fusion_type == "film"
-        ):
-            self.image_encoder = ResNet50Backbone()
-            if classifier_name == "FiLMClassifierDepth2":
-                self.classifier = FiLMClassifierDepth2(
-                    image_dim=ENCODER_OUTPUT_DIMS["resnet50"],
-                    text_dim=ENCODER_OUTPUT_DIMS["mpnet-base"],
-                    num_classes=num_classes,
-                    rngs=rngs,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported classifier for fusion: {classifier_name}"
-                )
+        if text_enc is not None and text_enc not in TEXT_ENCODER_OUTPUT_DIMS:
+            raise ValueError(f"Unsupported text encoder: {text_enc}")
 
+        self.model_type = model_type
+        self.active_image_enc = image_enc
+        self.active_text_enc = text_enc
+
+        image_dim = 0
+        if image_enc is not None:
+            image_encoder_name = cast(ImageEncoderName, image_enc)
+            self.image_encoder = build_image_backbone(image_encoder_name)
+            image_dim = get_image_encoder_output_dim(image_encoder_name)
         else:
-            raise NotImplementedError(
-                f"Unsupported config: image_enc={image_enc}, text_enc={text_enc}, fusion_type={fusion_type}"
-            )
+            self.image_encoder = nnx.data(None)
+
+        text_dim = TEXT_ENCODER_OUTPUT_DIMS[text_enc] if text_enc is not None else 0
+
+        self.classifier = ConcatMLPClassifier(
+            image_dim=image_dim,
+            text_dim=text_dim,
+            num_classes=num_classes,
+            hidden_dim=config.get("mlp_hidden_dim", 1024),
+            rngs=rngs,
+        )
+
+    def classify_from_features(
+        self,
+        image_features: jnp.ndarray | None,
+        text_features: jnp.ndarray | None,
+    ) -> jnp.ndarray:
+        return self.classifier(image_features, text_features)
 
     def __call__(
         self,
@@ -90,43 +128,33 @@ class DynamicModel(nnx.Module):
         embeddings: jnp.ndarray | None,
         train: bool = False,
     ) -> jnp.ndarray:
-        """Forward pass through the model based on configured encoders and fusion type.
+        """Forward pass through configured encoders and concat classifier.
 
         Args:
             images: Input images of shape (batch, height, width, channels), or None if text-only.
             embeddings: Text embeddings of shape (batch, embed_dim), or None if image-only.
-            train: Whether in training mode (affects backbone behavior).
+            train: Whether in training mode.
 
         Returns:
             Logits of shape (batch, num_classes).
         """
-        image_enc = self.config.get("image_enc")
-        text_enc = self.config.get("text_enc")
-
-        if image_enc is not None and text_enc is None:
+        image_features = None
+        if self.active_image_enc is not None:
             if images is None:
                 raise ValueError("Model configured for images but no images provided")
-            assert isinstance(self.classifier, ClassifierDepth2)
-            features = self.image_encoder(images, train=train)
-            return self.classifier(features)
-
-        elif text_enc is not None and image_enc is None:
-            if embeddings is None:
-                raise ValueError("Model configured for text but no embeddings provided")
-            assert isinstance(self.classifier, ClassifierDepth2)
-            return self.classifier(embeddings)
-
-        elif image_enc is not None and text_enc is not None:
-            if images is None:
-                raise ValueError("Fusion model requires images")
-            if embeddings is None:
-                raise ValueError("Fusion model requires text embeddings")
-            assert isinstance(self.classifier, FiLMClassifierDepth2)
+            if self.image_encoder is None:
+                raise RuntimeError("Image encoder is missing")
             image_features = self.image_encoder(images, train=train)
-            return self.classifier(image_features, embeddings)
 
-        else:
-            raise NotImplementedError("Invalid config")
+        text_features = None
+        if self.active_text_enc is not None:
+            if embeddings is None:
+                raise ValueError(
+                    "Model configured for text but no text embeddings provided"
+                )
+            text_features = embeddings
+
+        return self.classify_from_features(image_features, text_features)
 
 
 def load_config(config_path: str) -> ModelConfig:

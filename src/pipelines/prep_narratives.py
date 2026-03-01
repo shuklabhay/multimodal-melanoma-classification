@@ -17,6 +17,9 @@ MEMORY_QUOTAS = {
 
 ASYMPTOMATIC_PROB = 0.20
 SYMPTOM_COUNT_DIST = {1: 0.40, 2: 0.35, 3: 0.25}
+ACTION_PROB = 0.65
+SYMPTOM_POOL_WEIGHTS = {"universal": 0.65, "label": 0.30, "distractor": 0.05}
+HEALTHY_MODE_PROB = 0.15
 
 
 def load_text_file(filepath: str | Path) -> list[str]:
@@ -48,6 +51,13 @@ def load_narrative_options(options_dir: Path) -> dict:
             options_dir / "temporal_quantifiers.txt"
         ),
         "structures": load_text_file(options_dir / "structure.txt"),
+        "actions": load_text_file(options_dir / "action.txt"),
+        "symptoms_universal": load_text_file(
+            options_dir / "symptoms" / "universal.txt"
+        ),
+        "symptoms_distractor": load_text_file(
+            options_dir / "symptoms" / "distractor.txt"
+        ),
         "prompt_template": (options_dir / "prompt.txt").read_text(),
     }
 
@@ -75,11 +85,61 @@ def categorize_memory(memory: str) -> str:
         return "detailed"
 
 
+def _parse_age(age_value: object) -> int | None:
+    """Parse a numeric age value into a positive integer when possible.
+
+    Args:
+        age_value: Raw age value from metadata.
+
+    Returns:
+        Parsed integer age if valid and positive; otherwise None.
+    """
+    if age_value is None:
+        return None
+    if isinstance(age_value, (int, float)):
+        age_int = int(age_value)
+        return age_int if age_int > 0 else None
+    if isinstance(age_value, str):
+        raw = age_value.strip()
+        if not raw:
+            return None
+        numeric = raw.replace(".", "", 1)
+        if numeric.isdigit():
+            age_int = int(float(raw))
+            return age_int if age_int > 0 else None
+    return None
+
+
+def _build_context_slot(metadata: dict) -> str:
+    """Build raw context slot from metadata without templated phrasing.
+
+    Args:
+        metadata: Metadata dict with optional age/sex/site fields.
+
+    Returns:
+        Context slot string or "none" if no metadata is available.
+    """
+    age_int = _parse_age(metadata.get("age_approx"))
+    sex_value = metadata.get("sex")
+    site_value = metadata.get("anatom_site_general")
+
+    parts = []
+    if age_int is not None:
+        parts.append(f"age_approx={age_int}")
+    if isinstance(sex_value, str) and sex_value.strip():
+        parts.append(f"sex={sex_value.strip()}")
+    if isinstance(site_value, str) and site_value.strip():
+        parts.append(f"anatom_site_general={site_value.strip()}")
+
+    return ", ".join(parts) if parts else "none"
+
+
 def select_narrative_parameters(
     label: int,
     narrative_options: dict,
     rng: random.Random,
     config: DatasetConfig,
+    metadata: dict,
 ) -> dict:
     """Randomly selects narrative generation parameters for a given label.
 
@@ -88,30 +148,72 @@ def select_narrative_parameters(
         narrative_options: Dictionary containing available styles, memory types, etc.
         rng: Random number generator for reproducible selection.
         config: Dataset configuration with label-specific symptom files.
+        metadata: Patient metadata for context slot construction.
 
     Returns:
-        Dictionary containing selected style, memory, temporal_quantifier, symptoms, and structure.
+        Dictionary containing selected parameters for narrative generation.
     """
-    symptoms_file = config.label_config[label]["symptoms"]
-    available_symptoms = load_text_file(symptoms_file)
+    label_cfg = config.label_config[label]
+    narrative_mode = "healthy" if rng.random() < HEALTHY_MODE_PROB else "lesion"
+    symptoms_file = label_cfg["symptoms"]
+    label_symptoms = load_text_file(symptoms_file)
 
-    is_asymptomatic = rng.random() < ASYMPTOMATIC_PROB
-    if is_asymptomatic:
+    if narrative_mode == "healthy":
         selected_symptoms = []
-    else:
-        num_symptoms = rng.choices(
-            list(SYMPTOM_COUNT_DIST.keys()),
-            weights=list(SYMPTOM_COUNT_DIST.values()),
-            k=1,
-        )[0]
-        selected_symptoms = rng.sample(
-            available_symptoms, min(num_symptoms, len(available_symptoms))
+        action_cues = (
+            rng.choice(narrative_options["actions"])
+            if rng.random() < ACTION_PROB
+            else "none"
         )
+        structure = rng.choice(narrative_options["structures"])
+    else:
+        is_asymptomatic = rng.random() < ASYMPTOMATIC_PROB
+        if is_asymptomatic:
+            selected_symptoms = []
+        else:
+            num_symptoms = rng.choices(
+                list(SYMPTOM_COUNT_DIST.keys()),
+                weights=list(SYMPTOM_COUNT_DIST.values()),
+                k=1,
+            )[0]
+            pool_choices = rng.choices(
+                list(SYMPTOM_POOL_WEIGHTS.keys()),
+                weights=list(SYMPTOM_POOL_WEIGHTS.values()),
+                k=num_symptoms,
+            )
+            if (
+                "universal" not in pool_choices
+                and narrative_options["symptoms_universal"]
+            ):
+                pool_choices[0] = "universal"
+
+            selected_symptoms = []
+            for pool_name in pool_choices:
+                if pool_name == "universal":
+                    pool = narrative_options["symptoms_universal"]
+                elif pool_name == "distractor":
+                    pool = narrative_options["symptoms_distractor"]
+                else:
+                    pool = label_symptoms
+
+                if not pool:
+                    pool = narrative_options["symptoms_universal"] or label_symptoms
+                if pool:
+                    selected_symptoms.append(rng.choice(pool))
+
+            selected_symptoms = list(dict.fromkeys(selected_symptoms))
+
+        action_cues = (
+            rng.choice(narrative_options["actions"])
+            if rng.random() < ACTION_PROB
+            else "none"
+        )
+        structure = rng.choice(narrative_options["structures"])
 
     style = rng.choice(narrative_options["styles"])
     memory = rng.choice(narrative_options["memory"])
     temporal_quantifier = rng.choice(narrative_options["temporal_quantifiers"])
-    structure = rng.choice(narrative_options["structures"])
+    context_slot = _build_context_slot(metadata)
 
     return {
         "style": style,
@@ -120,6 +222,9 @@ def select_narrative_parameters(
         "symptoms": selected_symptoms,
         "memory_category": categorize_memory(memory),
         "structure": structure,
+        "action_cues": action_cues,
+        "context_slot": context_slot,
+        "narrative_mode": narrative_mode,
     }
 
 
@@ -160,7 +265,14 @@ def create_local_narrative_manifests(config: DatasetConfig) -> None:
             text_path_test = f"/data/raw/test/{prefix}_narratives/{text_filename}"
             text_path = text_path_train if split in ["train", "val"] else text_path_test
 
-            params = select_narrative_parameters(label, narrative_options, rng, config)
+            metadata = {
+                "age_approx": entry.get("age_approx"),
+                "sex": entry.get("sex"),
+                "anatom_site_general": entry.get("anatom_site_general"),
+            }
+            params = select_narrative_parameters(
+                label, narrative_options, rng, config, metadata
+            )
             narrative_entry = {
                 "text_path": text_path,
                 "text": "",
@@ -174,6 +286,9 @@ def create_local_narrative_manifests(config: DatasetConfig) -> None:
                 "temporal_quantifier": params["temporal_quantifier"],
                 "symptoms": params["symptoms"],
                 "structure": params["structure"],
+                "action_cues": params["action_cues"],
+                "context_slot": params["context_slot"],
+                "narrative_mode": params["narrative_mode"],
                 "age_approx": entry.get("age_approx"),
                 "sex": entry.get("sex"),
                 "anatom_site_general": entry.get("anatom_site_general"),
@@ -211,11 +326,12 @@ def visualize_narrative_manifests(config: DatasetConfig) -> None:
         _generate_distribution_summaries(all_manifests, figures_dir, prefix)
 
 
-def generate_narrative_texts(prefix: str) -> None:
-    """Generates narrative texts for all splits using LLM and saves to text files.
+def generate_narrative_texts(prefix: str, split: str | None = None) -> None:
+    """Generates narrative texts for specified split(s) using LLM and saves to text files.
 
     Args:
         prefix: Dataset prefix (e.g., 'isic2019') used for manifest naming.
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
     options_dir = Path("/root/assets/narrative_options")
     prompt_template = (options_dir / "prompt.txt").read_text()
@@ -223,7 +339,7 @@ def generate_narrative_texts(prefix: str) -> None:
     base_dir = Path("/data/raw")
     manifests_dir = Path("/root/assets/manifests")
 
-    splits = ["train", "val", "test"]
+    splits = [split] if split else ["train", "val", "test"]
     for split in splits:
         print(f"Starting generation for {split} split...")
         narratives_dir = (
@@ -244,7 +360,7 @@ def generate_narrative_texts(prefix: str) -> None:
 
         total_entries = asyncio.run(
             process_narrative_entries(
-                narrative_entries, prompt_template, split, batch_size=4
+                narrative_entries, prompt_template, split, batch_size=16
             )
         )
         print(f"  Completed {split} split: {total_entries} narratives generated")

@@ -1,7 +1,7 @@
-image_enc: resnet50
+type: image
+image_enc: mobilenet_v4_conv_large
 text_enc: mpnet-base
-fusion_type: film
-classifier: FiLMClassifierDepth2
+mlp_hidden_dim: 1024
 
 modality_dropout_normal: 0.6
 modality_dropout_zero_text: 0.2

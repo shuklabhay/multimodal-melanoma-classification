@@ -2,7 +2,7 @@ import modal
 from modal import App, Image, Volume
 
 from src.pipelines.prep_embeddings import create_narrative_embeddings
-from src.pipelines.dataset_config import ISIC2019_CONFIG, MILK10K_CONFIG
+from src.pipelines.dataset_config import ISIC2019_CONFIG
 from src.pipelines.prep_images import (
     create_manifests as _create_manifests,
     download_dataset as _download_dataset,
@@ -44,7 +44,6 @@ app = App(
 
 DATASET_CONFIGS = {
     "isic2019": ISIC2019_CONFIG,
-    "milk10k": MILK10K_CONFIG,
 }
 
 
@@ -53,7 +52,7 @@ def download_images(dataset: str) -> None:
     """Downloads images and metadata for specified dataset from ISIC archive.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _download_dataset(config)
@@ -64,7 +63,7 @@ def verify_download(dataset: str) -> None:
     """Verifies downloaded dataset by checking image counts and label mappings.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _verify_download(config)
@@ -75,31 +74,34 @@ def create_manifests(dataset: str) -> None:
     """Creates train/val/test manifest files for specified dataset.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
     """
     config = DATASET_CONFIGS[dataset]
     _create_manifests(config, train_ratio=0.9)
 
 
 @app.function(secrets=[modal.Secret.from_dotenv()], timeout=86400)
-def generate_narratives(dataset: str) -> None:
+def generate_narratives(dataset: str, split: str | None = None) -> None:
     """Generates narrative texts for specified dataset using LLM.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
-    generate_narrative_texts(dataset)
+    generate_narrative_texts(dataset, split=split)
 
 
 @app.local_entrypoint()
-def narratives_entrypoint(dataset: str) -> None:
+def narratives_entrypoint(dataset: str, split: str | None = None) -> None:
     """Local entrypoint to trigger narrative generation on Modal.
 
     Args:
-        dataset: Dataset name key ('isic2019' or 'milk10k').
+        dataset: Dataset name key ('isic2019').
+        split: Optional split name ("train", "val", or "test"). If None, runs all.
     """
-    print(f"Calling Modal to generate narrative texts for {dataset}...")
-    generate_narratives.remote(dataset)
+    split_label = split or "all"
+    print(f"Calling Modal to generate narrative texts for {dataset} ({split_label})...")
+    generate_narratives.remote(dataset, split)
     print("✓ Narrative text generation complete on Modal")
 
 
@@ -178,7 +180,7 @@ def generate_similar_pairs() -> None:
 
 
 @app.function(
-    gpu="L4",
+    gpu="A100",
     cpu=2,
     memory=24576,
     timeout=86400,
@@ -188,12 +190,18 @@ def generate_similar_pairs() -> None:
             {
                 "TF_GPU_ALLOCATOR": "cuda_malloc_async",
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
             }
         ),
         modal.Secret.from_dotenv(),
     ],
 )
-def train_model(run_name: str, config_name: str, resume_from: str | None = None):
+def train_model(
+    run_name: str,
+    config_name: str,
+    resume_from: str | None = None,
+    model_type: str | None = None,
+):
     """Train the lesion classification model on Modal with WandB tracking.
 
     Args:
@@ -201,12 +209,19 @@ def train_model(run_name: str, config_name: str, resume_from: str | None = None)
         config_name: Name of the config file (without .yaml extension).
         resume_from: Optional run name to resume training from. If provided,
             loads the checkpoint from that run and continues training.
+        model_type: Optional per-run override for model type: "image", "fusion", or "text".
     """
     from src.models.model_builder import load_config
     from src.utils.train_utils import train
 
     config_path = f"/root/config/{config_name}.yaml"
     config = load_config(config_path)
+    if model_type is not None:
+        if model_type not in {"image", "fusion", "text"}:
+            raise ValueError(
+                f"Invalid model_type={model_type}. Use one of: image, fusion, text"
+            )
+        config["type"] = model_type
 
     train(
         run_name=run_name,
