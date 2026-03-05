@@ -568,3 +568,36 @@ def evaluate_gpt5_on_test(
         "predictions": predictions,
         "labels": labels,
     }
+
+
+@app.function(
+    gpu="A100-40GB",
+    image=embedding_image,
+    cpu=4,
+    memory=32768,
+    timeout=86400,
+)
+def prepare_targeted_ablation_bundles(
+    output_dir: str = "/data/bundled_ablation",
+    base_bundle_dir: str = "/data/bundled",
+    manifests_dir: str = "/root/assets/manifests",
+    seed_csv: str = "0,1,2",
+    batch_size: int = 384,
+) -> dict:
+    """Create targeted ablation bundles on Modal volume.
+
+    Produces:
+    - metadata-only train/val/test bundles
+    - seed-specific train-shuffle bundles
+    - field-only (symptoms/temporal/risk) test bundles
+    """
+    from src.paper.ablation_data import prepare_targeted_ablation_bundles as _prepare
+
+    seeds = tuple(int(s.strip()) for s in seed_csv.split(",") if s.strip())
+    return _prepare(
+        base_bundle_dir=base_bundle_dir,
+        manifests_dir=manifests_dir,
+        output_dir=output_dir,
+        seeds=seeds,
+        batch_size=batch_size,
+    )
