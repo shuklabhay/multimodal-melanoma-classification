@@ -588,6 +588,7 @@ def prepare_targeted_ablation_bundles(
 
     Produces:
     - metadata-only train/val/test bundles
+    - template-full train/val/test bundles (style-control with full narrative fields)
     - seed-specific train-shuffle bundles
     - field-only (symptoms/temporal/risk) test bundles
     """

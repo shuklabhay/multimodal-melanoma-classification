@@ -86,6 +86,62 @@ def _risk_text(row: dict[str, Any]) -> str:
     )
 
 
+def _join_list_field(value: Any) -> str:
+    if isinstance(value, list):
+        items = [str(v).strip() for v in value if str(v).strip()]
+        if items:
+            return "; ".join(items)
+    s = str(value).strip() if value is not None else ""
+    return s if s else "none"
+
+
+def _template_full_text(row: dict[str, Any]) -> str:
+    """Deterministic template preserving narrative semantics without free-form style."""
+    age = _safe_age(row.get("age_approx"))
+    sex = _safe_str(row.get("sex"))
+    site = _safe_str(row.get("anatom_site_general"))
+    mode = _safe_str(row.get("narrative_mode"))
+    symptoms = _join_list_field(row.get("symptoms"))
+    temporal = _safe_str(row.get("temporal_quantifier"))
+    memory = _safe_str(row.get("memory_category"))
+    structure = _safe_str(row.get("structure"))
+    action = _safe_str(row.get("action_cues"), default="none")
+    context = _safe_str(row.get("context_slot"), default="none")
+    return (
+        f"Patient metadata: age approximately {age}; sex {sex}; anatomical site {site}. "
+        f"Narrative mode: {mode}. "
+        f"Symptoms: {symptoms}. "
+        f"Onset timing: {temporal}. "
+        f"Memory precision category: {memory}. "
+        f"Narrative structure: {structure}. "
+        f"Action cues: {action}. "
+        f"Context slot: {context}."
+    )
+
+
+def _ordered_narrative_rows_for_split(
+    manifests_dir: Path,
+    split: str,
+    split_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    narrative_manifest_path = manifests_dir / f"isic2019_narratives_split_{split}.jsonl"
+    if not narrative_manifest_path.exists():
+        raise FileNotFoundError(
+            f"Missing narrative manifest for split={split}: {narrative_manifest_path}"
+        )
+    narrative_rows = _load_jsonl(narrative_manifest_path)
+    narr_by_stem = {_image_stem_from_narrative_row(r): r for r in narrative_rows}
+
+    ordered_narr_rows: list[dict[str, Any]] = []
+    for row in split_rows:
+        stem = _image_stem_from_manifest_row(row)
+        narr = narr_by_stem.get(stem)
+        if narr is None:
+            raise KeyError(f"No narrative row found for split={split} sample stem={stem}")
+        ordered_narr_rows.append(narr)
+    return ordered_narr_rows
+
+
 def _encode_texts(
     encoder: SentenceTransformerEncoder,
     texts: list[str],
@@ -111,6 +167,7 @@ def prepare_targeted_ablation_bundles(
 
     Outputs:
     - metadata-only bundles: {output_dir}/metadata_only/{train,val,test}.npz
+    - template-full bundles: {output_dir}/template_full/{train,val,test}.npz
     - train-shuffle bundles: {output_dir}/train_shuffle/seed{S}/train.npz
     - field-test bundles: {output_dir}/field/{symptoms,temporal,risk}/test.npz
     """
@@ -154,6 +211,21 @@ def prepare_targeted_ablation_bundles(
             labels=bundle["labels"],
         )
 
+    # Style-control bundles: deterministic template text with full narrative fields.
+    template_full_dir = out / "template_full"
+    for split in ("train", "val", "test"):
+        rows = split_manifests[split]
+        ordered_narr_rows = _ordered_narrative_rows_for_split(manifests, split, rows)
+        texts = [_template_full_text(r) for r in ordered_narr_rows]
+        emb = _encode_texts(encoder, texts, batch_size=batch_size)
+        bundle = split_bundles[split]
+        _write_bundle(
+            template_full_dir / f"{split}.npz",
+            images=bundle["images"],
+            embeddings=emb,
+            labels=bundle["labels"],
+        )
+
     # Train-time shuffle bundles (seed-specific permutation over train embeddings).
     train_shuffle_dir = out / "train_shuffle"
     train_bundle = split_bundles["train"]
@@ -170,21 +242,11 @@ def prepare_targeted_ablation_bundles(
         )
 
     # Field-ablation test bundles (symptoms / temporal / risk).
-    narrative_manifest_path = manifests / "isic2019_narratives_split_test.jsonl"
-    if not narrative_manifest_path.exists():
-        raise FileNotFoundError(
-            f"Missing narrative manifest for field ablation: {narrative_manifest_path}"
-        )
-    narrative_rows = _load_jsonl(narrative_manifest_path)
-    narr_by_stem = {_image_stem_from_narrative_row(r): r for r in narrative_rows}
-
-    ordered_narr_rows: list[dict[str, Any]] = []
-    for row in split_manifests["test"]:
-        stem = _image_stem_from_manifest_row(row)
-        narr = narr_by_stem.get(stem)
-        if narr is None:
-            raise KeyError(f"No narrative row found for test sample stem={stem}")
-        ordered_narr_rows.append(narr)
+    ordered_narr_rows = _ordered_narrative_rows_for_split(
+        manifests_dir=manifests,
+        split="test",
+        split_rows=split_manifests["test"],
+    )
 
     field_to_text_fn = {
         "symptoms": _symptoms_text,
@@ -205,6 +267,7 @@ def prepare_targeted_ablation_bundles(
 
     return {
         "metadata_only_dir": str(metadata_dir),
+        "template_full_dir": str(template_full_dir),
         "train_shuffle_dir": str(train_shuffle_dir),
         "field_dir": str(field_dir),
         "seeds": list(seeds),
