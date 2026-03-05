@@ -180,7 +180,7 @@ def generate_similar_pairs() -> None:
 
 
 @app.function(
-    gpu="A100",
+    gpu="A100-40GB",
     cpu=2,
     memory=24576,
     timeout=86400,
@@ -201,6 +201,15 @@ def train_model(
     config_name: str,
     resume_from: str | None = None,
     model_type: str | None = None,
+    seed: int | None = None,
+    batch_size: int | None = None,
+    learning_rate: float | None = None,
+    num_epochs: int | None = None,
+    early_stopping_patience: int | None = None,
+    train_bundle: str | None = None,
+    val_bundle: str | None = None,
+    test_bundle: str | None = None,
+    class_weights_path: str | None = None,
 ):
     """Train the lesion classification model on Modal with WandB tracking.
 
@@ -210,6 +219,15 @@ def train_model(
         resume_from: Optional run name to resume training from. If provided,
             loads the checkpoint from that run and continues training.
         model_type: Optional per-run override for model type: "image", "fusion", or "text".
+        seed: Optional random seed override.
+        batch_size: Optional batch size override.
+        learning_rate: Optional optimizer learning-rate override.
+        num_epochs: Optional max epochs override.
+        early_stopping_patience: Optional early-stopping patience override.
+        train_bundle: Optional train bundle path override.
+        val_bundle: Optional validation bundle path override.
+        test_bundle: Optional test bundle path override.
+        class_weights_path: Optional class-weight path override.
     """
     from src.models.model_builder import load_config
     from src.utils.train_utils import train
@@ -223,11 +241,237 @@ def train_model(
             )
         config["type"] = model_type
 
-    train(
+    train_kwargs = {
+        "run_name": run_name,
+        "config": config,
+        "config_name": config_name,
+        "resume_from": resume_from,
+    }
+    if seed is not None:
+        train_kwargs["seed"] = seed
+    if batch_size is not None:
+        train_kwargs["batch_size"] = batch_size
+    if learning_rate is not None:
+        train_kwargs["learning_rate"] = learning_rate
+    if num_epochs is not None:
+        train_kwargs["num_epochs"] = num_epochs
+    if early_stopping_patience is not None:
+        train_kwargs["early_stopping_patience"] = early_stopping_patience
+    if train_bundle is not None:
+        train_kwargs["train_bundle"] = train_bundle
+    if val_bundle is not None:
+        train_kwargs["val_bundle"] = val_bundle
+    if test_bundle is not None:
+        train_kwargs["test_bundle"] = test_bundle
+    if class_weights_path is not None:
+        train_kwargs["class_weights_path"] = class_weights_path
+
+    train(**train_kwargs)
+
+
+@app.function(
+    gpu="A100-40GB",
+    cpu=2,
+    memory=24576,
+    timeout=86400,
+    retries=0,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+            }
+        ),
+        modal.Secret.from_dotenv(),
+    ],
+)
+def evaluate_checkpoint(
+    run_name: str,
+    config_name: str,
+    model_type: str = "fusion",
+    perturbation: str = "none",
+    seed: int = 0,
+    missing_rate: float = 0.5,
+    bundle_path: str = "/data/bundled/test.npz",
+    eval_run_name: str | None = None,
+    eval_group: str = "ablations/eval",
+    log_to_wandb: bool = True,
+) -> dict:
+    """Evaluate a saved checkpoint on a bundle with optional text perturbation.
+
+    Args:
+        run_name: Checkpoint run name under /data/checkpoints.
+        config_name: Config file stem under /root/config.
+        model_type: image|fusion|text override.
+        perturbation: none|shuffle|zero|constant|missing|adversarial_swap.
+        seed: RNG seed for perturbation operations.
+        missing_rate: Only used when perturbation=missing.
+        bundle_path: NPZ bundle path to evaluate.
+        eval_run_name: Optional explicit WandB run name for this evaluation.
+        eval_group: WandB group name for ablation/evaluation runs.
+        log_to_wandb: Whether to log evaluation metrics to WandB.
+
+    Returns:
+        Result dict with metrics and perturbation stats.
+    """
+    import os
+
+    import jax
+    import numpy as np
+    import wandb
+
+    from src.paper.model_analysis import evaluate_checkpoint_bundle
+    from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG
+
+    safe_tag = perturbation.replace("/", "_")
+    json_path = (
+        f"/data/buffer/eval_{run_name}_{model_type}_{safe_tag}_seed{seed}.json"
+    )
+    npz_path = f"/data/buffer/eval_{run_name}_{model_type}_{safe_tag}_seed{seed}.npz"
+
+    result = evaluate_checkpoint_bundle(
         run_name=run_name,
-        config=config,
         config_name=config_name,
-        resume_from=resume_from,
+        model_type=model_type,
+        bundle_path=bundle_path,
+        perturbation=perturbation,
+        seed=seed,
+        missing_rate=missing_rate,
+        output_json=json_path,
+        output_npz=npz_path,
+    )
+
+    # Record concrete runtime accelerator details for auditability.
+    runtime_devices = sorted(
+        {
+            getattr(device, "device_kind", str(device))
+            for device in jax.devices()
+        }
+    )
+    runtime_platforms = sorted({device.platform for device in jax.devices()})
+    result["runtime_devices"] = runtime_devices
+    result["runtime_platforms"] = runtime_platforms
+
+    if not log_to_wandb:
+        return result
+
+    metrics = result.get("metrics", {})
+    wb_name = (
+        eval_run_name
+        if eval_run_name is not None
+        else f"abl_eval_{run_name}_{model_type}_{safe_tag}_seed{seed}"
+    )
+
+    wandb.init(
+        project=os.environ["WANDB_PROJECT"],
+        entity=os.environ["WANDB_ENTITY"],
+        name=wb_name,
+        group=eval_group,
+        job_type="ablation_eval",
+        config={
+            "config_name": config_name,
+            "source_run_name": run_name,
+            "type": model_type,
+            "perturbation": perturbation,
+            "seed": seed,
+            "missing_rate": missing_rate,
+            "bundle_path": bundle_path,
+            "runtime_devices": runtime_devices,
+            "runtime_platforms": runtime_platforms,
+        },
+    )
+
+    log_dict = {
+        "test/loss": metrics.get("loss"),
+        "test/accuracy": metrics.get("accuracy"),
+        "test/balanced_accuracy": metrics.get("balanced_accuracy"),
+        "test/sensitivity": metrics.get("sensitivity_mean"),
+        "test/specificity": metrics.get("specificity_mean"),
+        "test/auroc": metrics.get("auroc"),
+        "test/ece": metrics.get("ece"),
+        "test/brier": metrics.get("brier"),
+    }
+    for k, v in metrics.items():
+        if k.startswith("bal_acc_"):
+            log_dict[f"test_cw/{k}"] = v
+        elif k.startswith("auroc_class_"):
+            log_dict[f"test_cw/{k}"] = v
+
+    wandb.log(log_dict)
+
+    try:
+        bundle = np.load(npz_path)
+        preds = bundle["predictions"]
+        labels = bundle["labels"]
+        class_names = [
+            ISIC19_LABEL_CONFIG[i]["name"] for i in range(len(ISIC19_LABEL_CONFIG))
+        ]
+        confusion = wandb.plot.confusion_matrix(
+            preds=preds.tolist(),
+            y_true=labels.tolist(),
+            class_names=class_names,
+            title="Test Confusion Matrix",
+        )
+        wandb.log({"test_confusion_matrix": confusion})
+    except Exception as exc:
+        print(f"Warning: failed to log confusion matrix for {wb_name}: {exc}")
+
+    wandb.summary["test_loss"] = metrics.get("loss")
+    wandb.summary["test_accuracy"] = metrics.get("accuracy")
+    wandb.summary["test_balanced_accuracy"] = metrics.get("balanced_accuracy")
+    wandb.summary["test_sensitivity"] = metrics.get("sensitivity_mean")
+    wandb.summary["test_specificity"] = metrics.get("specificity_mean")
+    wandb.summary["test_auroc"] = metrics.get("auroc")
+    wandb.summary["test_ece"] = metrics.get("ece")
+    wandb.summary["test_brier"] = metrics.get("brier")
+    wandb.summary["perturbation"] = perturbation
+    wandb.summary["source_run_name"] = run_name
+    wandb.summary["missing_rate"] = missing_rate
+    wandb.summary["runtime_devices"] = runtime_devices
+    wandb.summary["runtime_platforms"] = runtime_platforms
+
+    wandb.finish()
+    return result
+
+
+@app.function(
+    gpu="A100-40GB",
+    cpu=2,
+    memory=24576,
+    timeout=86400,
+    retries=0,
+    secrets=[
+        modal.Secret.from_dict(
+            {
+                "TF_GPU_ALLOCATOR": "cuda_malloc_async",
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+            }
+        ),
+        modal.Secret.from_dotenv(),
+    ],
+)
+def generate_explainability_cases(
+    run_name: str,
+    config_name: str,
+    model_type: str = "fusion",
+    output_dir: str = "/data/buffer",
+    figure_name: str = "figure_explainability_cases.png",
+    json_name: str = "explainability_cases.json",
+    steps: int = 24,
+) -> dict:
+    """Generate qualitative explainability case studies and save to volume."""
+    from src.paper.model_analysis import generate_explainability_case_studies
+
+    return generate_explainability_case_studies(
+        run_name=run_name,
+        config_name=config_name,
+        model_type=model_type,
+        output_dir=output_dir,
+        figure_name=figure_name,
+        json_name=json_name,
+        steps=steps,
     )
 
 

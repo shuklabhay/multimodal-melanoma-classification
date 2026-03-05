@@ -1,0 +1,44 @@
+name: tiered_core_ablation_v1
+constraints:
+  max_concurrent_gpu_instances: 10
+  runtime: modal
+  environment: uv
+backbones:
+- mobilenet_v4_conv_large
+- convnext_tiny
+- resnet50
+seeds:
+- 0
+- 1
+- 2
+retrain:
+  baseline_seed_completion:
+  - image
+  - fusion
+  train_time_misalignment: true
+  metadata_only_narrative: true
+eval_only:
+  shuffle_at_test: true
+  empty_text: true
+  constant_text: true
+  missing_text_curve:
+  - 0.1
+  - 0.25
+  - 0.5
+  - 0.75
+  - 0.9
+  adversarial_swap_pairs:
+  - - MEL
+    - NV
+  - - MEL
+    - BKL
+  - - AK
+    - SCC
+deferred:
+  fusion_architecture_sweep:
+  - gated
+  - cross_attention
+  - film
+  text_encoder_swap:
+  - clinicalbert
+  - smaller_baseline
