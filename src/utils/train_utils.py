@@ -31,7 +31,6 @@ from src.utils.eval_utils import (
     load_checkpoint_metadata,
     log_final_metrics,
     save_checkpoint,
-    upload_best_to_wandb,
 )
 
 DatasetBatch = tuple[tuple[np.ndarray, np.ndarray], np.ndarray]
@@ -462,9 +461,6 @@ def train(
 
     print("Unloading train dataset...")
     del train_ds
-
-    print("Uploading final best model to wandb...")
-    upload_best_to_wandb(run_name)
 
     print("Loading best model checkpoint...")
     load_checkpoint(model, run_name)

@@ -501,44 +501,6 @@ def save_checkpoint(
     return checkpoint_dir
 
 
-def upload_best_to_wandb(run_name: str) -> None:
-    """Upload the final best model from checkpoint directory to WandB artifact.
-
-    Args:
-        run_name: Name of the training run.
-    """
-    model_path, metadata_path = get_checkpoint_paths(run_name)
-    checkpoint_dir = get_checkpoint_dir(run_name)
-
-    if not os.path.exists(model_path):
-        print(f"Warning: No checkpoint found at {model_path}")
-        return
-
-    metadata: dict[str, str | int | float] = {
-        "run_name": run_name,
-        "checkpoint_volume_path": checkpoint_dir,
-    }
-    with open(metadata_path) as f:
-        for line in f:
-            key, value = line.strip().split("=", 1)
-            if key in ("epoch", "batch_size", "num_classes", "seed"):
-                metadata[key] = int(value)
-            elif key in ("val_accuracy", "learning_rate"):
-                metadata[key] = float(value)
-            else:
-                metadata[key] = value
-
-    artifact = wandb.Artifact(
-        name=f"{run_name}_final_model",
-        type="model",
-        metadata=metadata,
-    )
-    artifact.add_file(model_path, name=f"{run_name}_best.safetensors")
-    wandb.log_artifact(artifact)
-    print(f"Uploaded final best model artifact: {run_name}_final_model")
-    print(f"Checkpoint volume path: {checkpoint_dir}")
-
-
 def load_checkpoint(model: nnx.Module, run_name: str) -> None:
     """Load model parameters from checkpoint directory.
 

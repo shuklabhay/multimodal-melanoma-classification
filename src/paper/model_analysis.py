@@ -12,12 +12,7 @@ import optax
 
 from src.models.model_builder import build_model, load_config
 from src.utils.data_utils import load_manifest
-from src.utils.eval_utils import (
-    ISIC19_LABEL_CONFIG,
-    compute_metrics,
-    load_checkpoint,
-)
-
+from src.utils.eval_utils import ISIC19_LABEL_CONFIG, compute_metrics, load_checkpoint
 
 _SHORT_TO_LABEL = {cfg["short"]: label for label, cfg in ISIC19_LABEL_CONFIG.items()}
 _DEFAULT_SWAP_PAIRS = [("MEL", "NV"), ("MEL", "BKL"), ("AK", "SCC")]
@@ -56,7 +51,9 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
 
 def _parse_swap_pairs(swap_pairs: list[str] | None) -> list[tuple[int, int]]:
     if not swap_pairs:
-        return [(_SHORT_TO_LABEL[a], _SHORT_TO_LABEL[b]) for a, b in _DEFAULT_SWAP_PAIRS]
+        return [
+            (_SHORT_TO_LABEL[a], _SHORT_TO_LABEL[b]) for a, b in _DEFAULT_SWAP_PAIRS
+        ]
 
     pairs: list[tuple[int, int]] = []
     for raw in swap_pairs:
@@ -182,7 +179,9 @@ def evaluate_checkpoint_bundle(
         y_b = jnp.array(labels[start:end])
 
         logits_b = model(images=img_b, embeddings=emb_b, train=False)
-        loss_b = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits_b, y_b))
+        loss_b = jnp.mean(
+            optax.softmax_cross_entropy_with_integer_labels(logits_b, y_b)
+        )
 
         losses.append(float(loss_b))
         logits_chunks.append(np.array(logits_b))
@@ -368,7 +367,9 @@ def generate_explainability_case_studies(
 
     manifest = load_manifest(manifest_path)
     if len(manifest) != len(labels):
-        raise ValueError(f"Manifest size mismatch: {len(manifest)} vs bundle {len(labels)}")
+        raise ValueError(
+            f"Manifest size mismatch: {len(manifest)} vs bundle {len(labels)}"
+        )
 
     label_short = {idx: cfg["short"] for idx, cfg in ISIC19_LABEL_CONFIG.items()}
 
@@ -420,7 +421,9 @@ def generate_explainability_case_studies(
         narrative = ""
         if text_path.exists():
             narrative = text_path.read_text(errors="ignore").strip()
-        narrative_short = (narrative[:420] + "...") if len(narrative) > 420 else narrative
+        narrative_short = (
+            (narrative[:420] + "...") if len(narrative) > 420 else narrative
+        )
 
         p_pred_full = float(probs_full[pred_cls])
         p_pred_zero = float(probs_zero[pred_cls])
@@ -439,7 +442,9 @@ def generate_explainability_case_studies(
             f"Embedding IG L1: {emb_ig_l1:.2f}\n\n"
             f"Narrative:\n{narrative_short}"
         )
-        axs[row_idx, 2].text(0.0, 1.0, panel, va="top", ha="left", fontsize=9, wrap=True)
+        axs[row_idx, 2].text(
+            0.0, 1.0, panel, va="top", ha="left", fontsize=9, wrap=True
+        )
         axs[row_idx, 2].axis("off")
 
         case_rows.append(

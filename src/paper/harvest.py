@@ -10,7 +10,6 @@ from typing import Any
 import wandb
 from dotenv import load_dotenv
 
-
 BASELINE_DATE = "2026-02-25"
 GPT5_REFERENCE_DATE = "2025-12-07"
 NARRATIVE_DATE_PREFIX = "2026-02-0"
@@ -29,7 +28,9 @@ def _run_to_iso_date(created_at: str | None) -> str | None:
     if not created_at:
         return None
     try:
-        return datetime.fromisoformat(created_at.replace("Z", "+00:00")).date().isoformat()
+        return (
+            datetime.fromisoformat(created_at.replace("Z", "+00:00")).date().isoformat()
+        )
     except Exception:
         return None
 
@@ -73,7 +74,9 @@ def _collect_run_record(run: wandb.apis.public.runs.Run) -> dict[str, Any]:
         "test_brier": _safe_float(summary.get("test_brier")),
         "test_loss": _safe_float(summary.get("test_loss")),
         "best_epoch": summary.get("best_epoch"),
-        "best_val_balanced_accuracy": _safe_float(summary.get("best_val_balanced_accuracy")),
+        "best_val_balanced_accuracy": _safe_float(
+            summary.get("best_val_balanced_accuracy")
+        ),
         "runtime_s": summary.get("_runtime"),
         "step": summary.get("_step"),
         "summary": summary,
@@ -215,11 +218,7 @@ def harvest_wandb_runs(
     for rec in baseline_records:
         baseline_payload.append(
             {
-                **{
-                    k: v
-                    for k, v in rec.items()
-                    if k not in {"summary", "config"}
-                },
+                **{k: v for k, v in rec.items() if k not in {"summary", "config"}},
                 "confusion_json": confusion_map.get(rec["run_id"]),
                 "config": rec["config"],
                 "summary": rec["summary"],

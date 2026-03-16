@@ -137,7 +137,9 @@ def _ordered_narrative_rows_for_split(
         stem = _image_stem_from_manifest_row(row)
         narr = narr_by_stem.get(stem)
         if narr is None:
-            raise KeyError(f"No narrative row found for split={split} sample stem={stem}")
+            raise KeyError(
+                f"No narrative row found for split={split} sample stem={stem}"
+            )
         ordered_narr_rows.append(narr)
     return ordered_narr_rows
 
@@ -151,7 +153,9 @@ def _encode_texts(
     return emb.astype(np.float32)
 
 
-def _write_bundle(path: Path, images: np.ndarray, embeddings: np.ndarray, labels: np.ndarray) -> None:
+def _write_bundle(
+    path: Path, images: np.ndarray, embeddings: np.ndarray, labels: np.ndarray
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, images=images, embeddings=embeddings, labels=labels)
 
@@ -271,5 +275,7 @@ def prepare_targeted_ablation_bundles(
         "train_shuffle_dir": str(train_shuffle_dir),
         "field_dir": str(field_dir),
         "seeds": list(seeds),
-        "counts": {split: len(split_manifests[split]) for split in ("train", "val", "test")},
+        "counts": {
+            split: len(split_manifests[split]) for split in ("train", "val", "test")
+        },
     }

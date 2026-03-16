@@ -1,13 +1,11 @@
 import modal
 from modal import App, Image, Volume
 
-from src.pipelines.prep_embeddings import create_narrative_embeddings
 from src.pipelines.dataset_config import ISIC2019_CONFIG
-from src.pipelines.prep_images import (
-    create_manifests as _create_manifests,
-    download_dataset as _download_dataset,
-    verify_download as _verify_download,
-)
+from src.pipelines.prep_embeddings import create_narrative_embeddings
+from src.pipelines.prep_images import create_manifests as _create_manifests
+from src.pipelines.prep_images import download_dataset as _download_dataset
+from src.pipelines.prep_images import verify_download as _verify_download
 from src.pipelines.prep_narratives import generate_narrative_texts
 
 
@@ -325,9 +323,7 @@ def evaluate_checkpoint(
     from src.pipelines.dataset_config import ISIC19_LABEL_CONFIG
 
     safe_tag = perturbation.replace("/", "_")
-    json_path = (
-        f"/data/buffer/eval_{run_name}_{model_type}_{safe_tag}_seed{seed}.json"
-    )
+    json_path = f"/data/buffer/eval_{run_name}_{model_type}_{safe_tag}_seed{seed}.json"
     npz_path = f"/data/buffer/eval_{run_name}_{model_type}_{safe_tag}_seed{seed}.npz"
 
     result = evaluate_checkpoint_bundle(
@@ -344,10 +340,7 @@ def evaluate_checkpoint(
 
     # Record concrete runtime accelerator details for auditability.
     runtime_devices = sorted(
-        {
-            getattr(device, "device_kind", str(device))
-            for device in jax.devices()
-        }
+        {getattr(device, "device_kind", str(device)) for device in jax.devices()}
     )
     runtime_platforms = sorted({device.platform for device in jax.devices()})
     result["runtime_devices"] = runtime_devices

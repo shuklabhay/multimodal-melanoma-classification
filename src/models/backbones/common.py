@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
-from jax import lax
 import numpy as np
 import torch
 from flax import nnx
+from jax import lax
 
 
 def recursive_to_nnx(data, variable_type):

@@ -6,9 +6,8 @@ import jax.numpy as jnp
 from flax import nnx
 from flax.core.frozen_dict import unfreeze
 from transformers import FlaxResNetModel
-from transformers.modeling_flax_outputs import (
-    FlaxBaseModelOutputWithPoolingAndNoAttention,
-)
+from transformers.modeling_flax_outputs import \
+    FlaxBaseModelOutputWithPoolingAndNoAttention
 
 from src.models.backbones.common import recursive_from_nnx, recursive_to_nnx
 

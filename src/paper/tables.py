@@ -5,7 +5,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 CLASS_MAP = {
     0: "MEL",
     1: "NV",
@@ -66,7 +65,8 @@ def build_tables(
                 "fus_ece": float(f["test_ece"]),
                 "fus_brier": float(f["test_brier"]),
                 "delta_accuracy": float(f["test_accuracy"]) - float(i["test_accuracy"]),
-                "delta_bal_acc": float(f["test_balanced_accuracy"]) - float(i["test_balanced_accuracy"]),
+                "delta_bal_acc": float(f["test_balanced_accuracy"])
+                - float(i["test_balanced_accuracy"]),
                 "delta_auroc": float(f["test_auroc"]) - float(i["test_auroc"]),
             }
         )
@@ -76,12 +76,16 @@ def build_tables(
         "text_bal_acc": float(text_run[0]["test_balanced_accuracy"]),
         "text_auroc": float(text_run[0]["test_auroc"]),
         "image_acc_mean": _mean([float(r["test_accuracy"]) for r in image_runs]),
-        "image_bal_acc_mean": _mean([float(r["test_balanced_accuracy"]) for r in image_runs]),
+        "image_bal_acc_mean": _mean(
+            [float(r["test_balanced_accuracy"]) for r in image_runs]
+        ),
         "image_auroc_mean": _mean([float(r["test_auroc"]) for r in image_runs]),
         "image_ece_mean": _mean([float(r["test_ece"]) for r in image_runs]),
         "image_brier_mean": _mean([float(r["test_brier"]) for r in image_runs]),
         "fusion_acc_mean": _mean([float(r["test_accuracy"]) for r in fusion_runs]),
-        "fusion_bal_acc_mean": _mean([float(r["test_balanced_accuracy"]) for r in fusion_runs]),
+        "fusion_bal_acc_mean": _mean(
+            [float(r["test_balanced_accuracy"]) for r in fusion_runs]
+        ),
         "fusion_auroc_mean": _mean([float(r["test_auroc"]) for r in fusion_runs]),
         "fusion_ece_mean": _mean([float(r["test_ece"]) for r in fusion_runs]),
         "fusion_brier_mean": _mean([float(r["test_brier"]) for r in fusion_runs]),

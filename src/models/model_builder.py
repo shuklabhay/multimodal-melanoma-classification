@@ -4,11 +4,8 @@ import jax.numpy as jnp
 import yaml
 from flax import nnx
 
-from src.models.backbones import (
-    ImageEncoderName,
-    build_image_backbone,
-    get_image_encoder_output_dim,
-)
+from src.models.backbones import (ImageEncoderName, build_image_backbone,
+                                  get_image_encoder_output_dim)
 from src.models.classifiers import ConcatMLPClassifier
 
 TEXT_ENCODER_OUTPUT_DIMS = {
