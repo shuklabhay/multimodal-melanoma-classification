@@ -51,9 +51,10 @@ def _plot_main_metric_bars(summary: dict, out_path: Path) -> None:
     width = 0.25
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.bar(x - width, txt_vals, width=width, label="Text-only", color="#9aa0a6")
-    ax.bar(x, img_vals, width=width, label="Image-only", color="#1f77b4")
-    ax.bar(x + width, fus_vals, width=width, label="Fusion", color="#2ca02c")
+    # Okabe-Ito-inspired palette for clearer contrast and colorblind safety.
+    ax.bar(x - width, txt_vals, width=width, label="Text-only", color="#999999")
+    ax.bar(x, img_vals, width=width, label="Image-only", color="#0072B2")
+    ax.bar(x + width, fus_vals, width=width, label="Fusion", color="#E69F00")
 
     ax.set_xticks(x)
     ax.set_xticklabels(metrics)
@@ -106,18 +107,50 @@ def _plot_calibration_bars(summary: dict, out_path: Path) -> None:
 
 def _plot_per_class_delta(per_class_delta: list[dict], out_path: Path) -> None:
     order = ["0MEL", "1NV", "2BCC", "3AK", "4BKL", "5DF", "6VASC", "7SCC"]
+    short_name = {
+        "0MEL": "MEL",
+        "1NV": "NV",
+        "2BCC": "BCC",
+        "3AK": "AK",
+        "4BKL": "BKL",
+        "5DF": "DF",
+        "6VASC": "VASC",
+        "7SCC": "SCC",
+    }
     by_key = {row["class_key"]: row for row in per_class_delta}
 
     classes = [k for k in order if k in by_key]
-    deltas = [float(by_key[k]["delta"]) for k in classes]
+    y = np.arange(len(classes))
+    img_vals = [float(by_key[k]["img_mean"]) for k in classes]
+    fus_vals = [float(by_key[k]["fus_mean"]) for k in classes]
+    deltas_pp = [(f - i) * 100.0 for i, f in zip(img_vals, fus_vals)]
 
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-    colors = ["#2ca02c" if d >= 0 else "#d62728" for d in deltas]
-    ax.bar(classes, deltas, color=colors)
-    ax.axhline(0, color="black", linewidth=1)
-    ax.set_ylabel("Fusion - Image balanced accuracy")
-    ax.set_title("Per-class Balanced Accuracy Delta")
-    ax.grid(axis="y", alpha=0.25)
+    fig, ax = plt.subplots(figsize=(9.5, 5.2))
+    for yi, x0, x1 in zip(y, img_vals, fus_vals):
+        ax.hlines(yi, x0, x1, color="#999999", linewidth=2.0, alpha=0.9, zorder=1)
+    ax.scatter(img_vals, y, label="Image-only", color="#0072B2", s=58, zorder=3)
+    ax.scatter(fus_vals, y, label="Fusion", color="#E69F00", s=58, zorder=3)
+
+    for yi, x1, dpp in zip(y, fus_vals, deltas_pp):
+        sign = "+" if dpp >= 0 else "-"
+        ax.text(
+            x1 + 0.015,
+            yi,
+            f"{sign}{abs(dpp):.1f} pp",
+            va="center",
+            ha="left",
+            fontsize=9,
+            color="#333333",
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([short_name[k] for k in classes])
+    ax.set_xlim(0.30, 0.82)
+    ax.set_xlabel("Balanced Accuracy")
+    ax.set_title("Per-class Balanced Accuracy: Image-only vs Fusion")
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(loc="lower right")
+    ax.invert_yaxis()
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=200)
