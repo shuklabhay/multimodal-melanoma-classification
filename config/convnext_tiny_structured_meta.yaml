@@ -1,0 +1,10 @@
+type: fusion
+image_enc: convnext_tiny
+text_enc: structured-meta
+text_feature_dim: 14
+fusion_type: concat
+mlp_hidden_dim: 1024
+
+modality_dropout_normal: 0.6
+modality_dropout_zero_text: 0.2
+modality_dropout_swap_text: 0.2
