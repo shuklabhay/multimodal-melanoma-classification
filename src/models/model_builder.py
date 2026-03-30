@@ -4,9 +4,12 @@ import jax.numpy as jnp
 import yaml
 from flax import nnx
 
-from src.models.backbones import (ImageEncoderName, build_image_backbone,
-                                  get_image_encoder_output_dim)
-from src.models.classifiers import ConcatMLPClassifier
+from src.models.backbones import (
+    ImageEncoderName,
+    build_image_backbone,
+    get_image_encoder_output_dim,
+)
+from src.models.classifiers import ConcatMLPClassifier, CrossAttentionMLPClassifier
 
 TEXT_ENCODER_OUTPUT_DIMS = {
     "mpnet-base": 768,
@@ -20,8 +23,11 @@ class ModelConfig(TypedDict, total=False):
     type: ModelType
     run_mode: LegacyRunMode
     image_enc: ImageEncoderName | None
-    text_enc: Literal["mpnet-base"] | None
+    text_enc: str | None
+    text_feature_dim: int
     fusion_type: str
+    fusion_attn_dim: int
+    fusion_num_heads: int
     mlp_hidden_dim: int
     modality_dropout_normal: float
     modality_dropout_zero_text: float
@@ -87,8 +93,10 @@ class DynamicModel(nnx.Module):
         if image_enc is None and text_enc is None:
             raise ValueError("At least one encoder must be enabled")
 
-        if text_enc is not None and text_enc not in TEXT_ENCODER_OUTPUT_DIMS:
-            raise ValueError(f"Unsupported text encoder: {text_enc}")
+        text_feature_dim = config.get("text_feature_dim")
+        if text_enc is not None and text_feature_dim is None:
+            if text_enc not in TEXT_ENCODER_OUTPUT_DIMS:
+                raise ValueError(f"Unsupported text encoder: {text_enc}")
 
         self.model_type = model_type
         self.active_image_enc = image_enc
@@ -102,15 +110,35 @@ class DynamicModel(nnx.Module):
         else:
             self.image_encoder = nnx.data(None)
 
-        text_dim = TEXT_ENCODER_OUTPUT_DIMS[text_enc] if text_enc is not None else 0
+        text_dim = 0
+        if text_enc is not None:
+            text_dim = (
+                text_feature_dim
+                if text_feature_dim is not None
+                else TEXT_ENCODER_OUTPUT_DIMS[text_enc]
+            )
 
-        self.classifier = ConcatMLPClassifier(
-            image_dim=image_dim,
-            text_dim=text_dim,
-            num_classes=num_classes,
-            hidden_dim=config.get("mlp_hidden_dim", 1024),
-            rngs=rngs,
-        )
+        fusion_type = config.get("fusion_type", "concat")
+        if model_type == "fusion" and fusion_type == "cross_attention":
+            self.classifier = CrossAttentionMLPClassifier(
+                image_dim=image_dim,
+                text_dim=text_dim,
+                num_classes=num_classes,
+                hidden_dim=config.get("mlp_hidden_dim", 1024),
+                attn_dim=config.get("fusion_attn_dim", 512),
+                num_heads=config.get("fusion_num_heads", 8),
+                rngs=rngs,
+            )
+        elif fusion_type == "concat":
+            self.classifier = ConcatMLPClassifier(
+                image_dim=image_dim,
+                text_dim=text_dim,
+                num_classes=num_classes,
+                hidden_dim=config.get("mlp_hidden_dim", 1024),
+                rngs=rngs,
+            )
+        else:
+            raise ValueError(f"Unsupported fusion_type: {fusion_type}")
 
     def classify_from_features(
         self,

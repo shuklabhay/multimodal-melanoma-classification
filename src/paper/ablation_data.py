@@ -119,6 +119,44 @@ def _template_full_text(row: dict[str, Any]) -> str:
     )
 
 
+def _structured_meta_age_stats(rows: list[dict[str, Any]]) -> tuple[float, float]:
+    ages = [
+        float(row["age_approx"]) for row in rows if row.get("age_approx") is not None
+    ]
+    if not ages:
+        return 0.0, 1.0
+    age_mean = float(np.mean(ages))
+    age_std = float(np.std(ages))
+    return age_mean, age_std if age_std > 0.0 else 1.0
+
+
+def _structured_meta_categories(
+    rows: list[dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    sex_values = sorted({_safe_str(row.get("sex")) for row in rows})
+    site_values = sorted({_safe_str(row.get("anatom_site_general")) for row in rows})
+    return sex_values, site_values
+
+
+def _structured_meta_vector(
+    row: dict[str, Any],
+    age_mean: float,
+    age_std: float,
+    sex_values: list[str],
+    site_values: list[str],
+) -> np.ndarray:
+    sex_value = _safe_str(row.get("sex"))
+    site_value = _safe_str(row.get("anatom_site_general"))
+    age_value = row.get("age_approx")
+    age_missing = 1.0 if age_value is None else 0.0
+    age_scaled = 0.0 if age_value is None else (float(age_value) - age_mean) / age_std
+    sex_one_hot = [1.0 if sex_value == value else 0.0 for value in sex_values]
+    site_one_hot = [1.0 if site_value == value else 0.0 for value in site_values]
+    return np.asarray(
+        [age_scaled, age_missing, *sex_one_hot, *site_one_hot], dtype=np.float32
+    )
+
+
 def _ordered_narrative_rows_for_split(
     manifests_dir: Path,
     split: str,
@@ -275,6 +313,71 @@ def prepare_targeted_ablation_bundles(
         "train_shuffle_dir": str(train_shuffle_dir),
         "field_dir": str(field_dir),
         "seeds": list(seeds),
+        "counts": {
+            split: len(split_manifests[split]) for split in ("train", "val", "test")
+        },
+    }
+
+
+def prepare_structured_metadata_bundles(
+    base_bundle_dir: str = "/data/bundled",
+    manifests_dir: str = "/root/assets/manifests",
+    output_dir: str = "/data/bundled_structured_meta",
+) -> dict[str, Any]:
+    """Create train/val/test bundles with direct structured metadata features."""
+    base = Path(base_bundle_dir)
+    manifests = Path(manifests_dir)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    split_manifests = {
+        "train": _load_jsonl(manifests / "split_train.jsonl"),
+        "val": _load_jsonl(manifests / "split_val.jsonl"),
+        "test": _load_jsonl(manifests / "split_test.jsonl"),
+    }
+    split_bundles = {
+        "train": np.load(base / "train.npz", allow_pickle=False),
+        "val": np.load(base / "val.npz", allow_pickle=False),
+        "test": np.load(base / "test.npz", allow_pickle=False),
+    }
+
+    age_mean, age_std = _structured_meta_age_stats(split_manifests["train"])
+    sex_values, site_values = _structured_meta_categories(split_manifests["train"])
+
+    for split in ("train", "val", "test"):
+        rows = split_manifests[split]
+        bundle = split_bundles[split]
+        if len(rows) != int(bundle["labels"].shape[0]):
+            raise ValueError(
+                f"Split size mismatch for {split}: manifest={len(rows)}, bundle={int(bundle['labels'].shape[0])}"
+            )
+        embeddings = np.stack(
+            [
+                _structured_meta_vector(
+                    row,
+                    age_mean=age_mean,
+                    age_std=age_std,
+                    sex_values=sex_values,
+                    site_values=site_values,
+                )
+                for row in rows
+            ],
+            axis=0,
+        ).astype(np.float32)
+        _write_bundle(
+            out / f"{split}.npz",
+            images=bundle["images"],
+            embeddings=embeddings,
+            labels=bundle["labels"],
+        )
+
+    return {
+        "output_dir": str(out),
+        "feature_dim": 2 + len(sex_values) + len(site_values),
+        "age_mean": age_mean,
+        "age_std": age_std,
+        "sex_values": sex_values,
+        "site_values": site_values,
         "counts": {
             split: len(split_manifests[split]) for split in ("train", "val", "test")
         },

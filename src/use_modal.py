@@ -595,3 +595,19 @@ def prepare_targeted_ablation_bundles(
         seeds=seeds,
         batch_size=batch_size,
     )
+
+
+@app.function(cpu=4, memory=16384, timeout=86400)
+def prepare_structured_metadata_bundles(
+    output_dir: str = "/data/bundled_structured_meta",
+    base_bundle_dir: str = "/data/bundled",
+    manifests_dir: str = "/root/assets/manifests",
+) -> dict:
+    """Create direct structured-metadata bundles on the Modal volume."""
+    from src.paper.ablation_data import prepare_structured_metadata_bundles as _prepare
+
+    return _prepare(
+        base_bundle_dir=base_bundle_dir,
+        manifests_dir=manifests_dir,
+        output_dir=output_dir,
+    )
